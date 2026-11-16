@@ -112,6 +112,61 @@ def test_original_resource_controls_count_and_move_capabilities() -> None:
     assert [count.value for count in recording.protection.reported_copy_counts] == [2, 3, 10]
 
 
+@pytest.mark.parametrize('profile_name', ['panasonic', 'generic'])
+@pytest.mark.parametrize('is_reversed', [False, True])
+def test_panasonic_conversion_evidence_survives_resource_order_and_serialization(
+    profile_name: str, is_reversed: bool
+) -> None:
+    """Preserve the CI omission and HD/VGA references reported in Issue #11."""
+
+    profile = next(profile for profile in PROFILES if profile.name == profile_name)
+    # Synthetic recording with the resource forms in the report, deliberately placing conversions first
+    resources = [
+        '<res protocolInfo="http-get:*:application/x-dtcp1:DLNA.ORG_PN=DTCP_AVC_TS_MP_HD_AAC_LTP_T">'
+        'http://192.0.2.1/AV-1_BDY?CI=1&amp;fmt=AVC_TS_MP_HD_AAC_LTP_T</res>',
+        '<res protocolInfo="http-get:*:application/x-dtcp1:DTV_MVP_PN=DTCP_AVC_TS_DTV_SD_AAC_T">'
+        'http://192.0.2.1/AV-1_VGA</res>',
+        '<res pxn:CopyCount="10" pxn:VgaContentUri="http://192.0.2.1/AV-1_VGA" '
+        'protocolInfo="http-get:*:application/x-dtcp1:DLNA.ORG_PN=DTCP_AVC_TS_JP_AAC_T">'
+        'http://192.0.2.1/AV-1_BDY</res>',
+    ]
+    if is_reversed is True:
+        resources.reverse()
+    root = ET.fromstring(recording_xml())
+    item = root[0]
+    original = item.find('{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}res')
+    assert original is not None
+    item.remove(original)
+    for resource in resources:
+        item.append(
+            ET.fromstring(
+                '<root xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
+                'xmlns:pxn="urn:schemas-panasonic-com:pxn">' + resource + '</root>'
+            )[0]
+        )
+    recording = parse_didl(ET.tostring(root, encoding='unicode'), profile)[0]
+    assert isinstance(recording, Recording)
+    saved = Recording.model_validate_json(recording.model_dump_json())
+    assert saved == recording
+    assert all(resource.protocol_info.is_converted is None for resource in saved.resources)
+    assert saved.original_resource is not None
+    if profile_name == 'panasonic':
+        assert saved.original_resource.url == 'http://192.0.2.1/AV-1_BDY'
+        assert saved.original_resource.is_converted is None
+        assert saved.protection.remaining_copy_count.value == 9
+        by_url = {resource.url: resource for resource in saved.resources}
+        hd = by_url['http://192.0.2.1/AV-1_BDY?CI=1&fmt=AVC_TS_MP_HD_AAC_LTP_T']
+        vga = by_url['http://192.0.2.1/AV-1_VGA']
+        assert hd.is_converted is True and hd.conversion is not None
+        assert hd.conversion.source == 'resource_url'
+        assert hd.conversion.raw_value == '1'
+        assert vga.is_converted is True and vga.conversion is not None
+        assert vga.conversion.field_name == '{urn:schemas-panasonic-com:pxn}VgaContentUri'
+    else:
+        assert all(resource.conversion is None for resource in saved.resources)
+        assert saved.original_resource == saved.resources[0]
+
+
 _CHAPTER_CASES: list[tuple[ChapterFormat, str]] = [
     (
         'sony',

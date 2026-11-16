@@ -8,7 +8,7 @@ from xml.etree import ElementTree as ET
 
 from pydtcpip.dlna.description import DeviceDescription
 from pydtcpip.errors import PyDTCPIPError
-from pydtcpip.models import ChapterResource, ProtectionValue, ReportedCopyCount
+from pydtcpip.models import ChapterResource, ProtectionValue, ReportedCopyCount, ResourceConversion
 
 
 @dataclass(frozen=True)
@@ -59,6 +59,27 @@ class Profile:
     # Communication is implemented by the extension registry, never by a profile
     extension: str | None = None
     recording_roots: tuple[str, ...] | None = None
+    # Interpret resource conversion only when protocolInfo omits DLNA.ORG_CI
+    read_resource_conversion: Callable[[ET.Element, ET.Element], ResourceConversion | None] | None = None
+
+    def resource_conversion(self, item: ET.Element, resource: ET.Element) -> ResourceConversion | None:
+        """
+        Interpret family-specific evidence of resource conversion.
+
+        Args:
+            item (ET.Element): Complete DIDL-Lite item containing resource references
+            resource (ET.Element): Resource whose standard conversion flag is absent
+
+        Returns:
+            ResourceConversion | None: Evidence from the nearest profile handler, or None when unknown
+        """
+
+        profile: Profile | None = self
+        while profile is not None:
+            if profile.read_resource_conversion is not None:
+                return profile.read_resource_conversion(item, resource)
+            profile = profile.parent
+        return None
 
     def resolve_copy_count_fields(self) -> tuple[CopyCountField, ...]:
         """

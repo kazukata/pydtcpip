@@ -215,6 +215,17 @@ class ProtocolInfo(BaseModel):
         return value == '1'
 
 
+class ResourceConversion(BaseModel):
+    """Evidence identifying a resource as stored content or a converted representation."""
+
+    model_config = ConfigDict(frozen=True)
+
+    is_converted: bool
+    source: Literal['protocol_info', 'metadata', 'resource_url']
+    field_name: str
+    raw_value: str
+
+
 class Resource(BaseModel):
     """A recording resource (a DIDL-Lite res element)."""
 
@@ -225,6 +236,15 @@ class Resource(BaseModel):
     # res attributes (namespaced attributes use the `{namespace}name` format)
     attributes: dict[str, str]
     raw_xml: str
+    conversion: ResourceConversion | None = None
+
+    @property
+    def is_converted(self) -> bool | None:
+        """Return the conversion status supported by standard or family-specific evidence."""
+
+        if self.conversion is not None:
+            return self.conversion.is_converted
+        return self.protocol_info.is_converted
 
     @property
     def duration(self) -> str | None:
@@ -339,15 +359,15 @@ class Recording(BaseModel):
     def original_resource(self) -> Resource | None:
         """
         Return a DTCP-IP resource in the recorder's stored format.
-        Prefer DLNA.ORG_CI=0; otherwise return the first resource not explicitly marked as converted.
+        Prefer a resource identified as stored content; otherwise use the first with unknown conversion status.
         """
 
         dtcp_resources = [resource for resource in self.resources if resource.protocol_info.is_dtcp is True]
         for resource in dtcp_resources:
-            if resource.protocol_info.is_converted is False:
+            if resource.is_converted is False:
                 return resource
         for resource in dtcp_resources:
-            if resource.protocol_info.is_converted is None:
+            if resource.is_converted is None:
                 return resource
         return None
 

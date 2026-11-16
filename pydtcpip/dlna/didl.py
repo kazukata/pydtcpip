@@ -15,6 +15,7 @@ from pydtcpip.models import (
     RecordingProtection,
     ReportedCopyCount,
     Resource,
+    ResourceConversion,
 )
 
 
@@ -82,7 +83,9 @@ def parse_didl(raw_xml: str, profile: Profile) -> list[Container | Recording]:
 
         # Recordings contain program metadata, resources, and protection information
         elif element.tag == f'{{{DIDL_NAMESPACE}}}item':
-            resources = tuple(_parse_resource(res) for res in element.iterfind(f'{{{DIDL_NAMESPACE}}}res'))
+            resources = tuple(
+                _parse_resource(res, element, profile) for res in element.iterfind(f'{{{DIDL_NAMESPACE}}}res')
+            )
             metadata: dict[str, list[MetadataValue]] = {
                 'ratings': [],
                 'video_components': [],
@@ -165,22 +168,36 @@ def parse_didl(raw_xml: str, profile: Profile) -> list[Container | Recording]:
     return objects
 
 
-def _parse_resource(element: ET.Element) -> Resource:
+def _parse_resource(element: ET.Element, item: ET.Element, profile: Profile) -> Resource:
     """
     Convert a res element to a resource model.
 
     Args:
         element (ET.Element): DIDL-Lite res element
+        item (ET.Element): Parent item containing family-specific resource references
+        profile (Profile): Device-family rules
 
     Returns:
         Resource: Resource model
     """
 
+    protocol_info = parse_protocol_info(element.get('protocolInfo', ''))
+    conversion = (
+        profile.resource_conversion(item, element)
+        if protocol_info.is_converted is None
+        else ResourceConversion(
+            is_converted=protocol_info.is_converted,
+            source='protocol_info',
+            field_name='DLNA.ORG_CI',
+            raw_value=protocol_info.parameters['DLNA.ORG_CI'],
+        )
+    )
     return Resource(
         url=(element.text or '').strip(),
-        protocol_info=parse_protocol_info(element.get('protocolInfo', '')),
+        protocol_info=protocol_info,
         attributes=dict(element.attrib),
         raw_xml=ET.tostring(element, encoding='unicode'),
+        conversion=conversion,
     )
 
 
@@ -206,10 +223,10 @@ def _read_protection(
     # Determine Move support from the advertised original-format resource used for lossless transfer
     target: Resource | None = None
     for resource in resources:
-        if resource.protocol_info.is_dtcp is True and resource.protocol_info.is_converted is False:
+        if resource.protocol_info.is_dtcp is True and resource.is_converted is False:
             target = resource
             break
-        if target is None and resource.protocol_info.is_dtcp is True and resource.protocol_info.is_converted is None:
+        if target is None and resource.protocol_info.is_dtcp is True and resource.is_converted is None:
             target = resource
 
     # An encoded derivative may advertise a different count from the original recording

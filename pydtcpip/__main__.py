@@ -492,12 +492,17 @@ def _print_recording(recording: Recording) -> None:
             convention = 'Includes final Move' if count.includes_final_move else 'Excludes final Move'
         table.add_row(f'Reported count ({count.field_name.rpartition("}")[2]})', f'{count.raw_value} ({convention})')
     for index, resource in enumerate(recording.resources, start=1):
-        converted = {True: 'Converted', False: 'Original format', None: 'Unknown'}[resource.protocol_info.is_converted]
+        converted = {True: 'Converted', False: 'Original format', None: 'Unknown'}[resource.is_converted]
         # Profile names can use DLNA.ORG_PN, DLPA.JP_PN, or a vendor namespace such as TOSHIBA.CO.JP_PN
         profile_name = next(
             (value for name, value in resource.protocol_info.parameters.items() if name.endswith('_PN')), ''
         )
         table.add_row(f'Resource {index}', f'{converted} {profile_name}')
+        if resource.conversion is not None:
+            table.add_row(
+                f'Resource {index}: Format evidence',
+                Text(f'{resource.conversion.source}: {resource.conversion.field_name}={resource.conversion.raw_value}'),
+            )
         for label, value in (
             ('Duration', resource.duration),
             ('Resolution', resource.resolution),

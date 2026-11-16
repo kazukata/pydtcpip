@@ -23,6 +23,7 @@ from pydtcpip.models import (
     RecordingProtection,
     ReportedCopyCount,
     Resource,
+    ResourceConversion,
     TimeRange,
 )
 from pydtcpip.receiver import DubbingReceiver
@@ -62,6 +63,7 @@ __all__ = [
     'RecordingProtection',
     'ReportedCopyCount',
     'Resource',
+    'ResourceConversion',
     'ServiceArgument',
     'ServiceDescription',
     'Sink',

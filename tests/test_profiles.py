@@ -27,13 +27,13 @@ _PROFILE_ALLOWED_IMPORTS = frozenset(
 )
 
 # Expected profile, copy count status, copy count value, and DLNA.ORG_CI of the original resource
-## None means the family does not mark the stored format, so the original resource is the one not marked as converted
+## None in the final column means the fixture contains no eligible original resource
 _EXPECTED = {
     # A regza:copycount of 10 includes the final Move, leaving 9 copies as shown on the TV
     ('toshiba', 'dbr-z620'): ('toshiba', 'known', 9, '0'),
     ('toshiba_regza_tv', '43z570l'): ('toshiba_regza_tv', 'omitted', None, '0'),
-    # A pxn:CopyCount of 10 likewise includes the final Move
-    ('panasonic', 'dmr-brx2060'): ('panasonic', 'known', 9, None),
+    # Every resource in this fixture has CI=1 in its URL, including the one with CopyCount
+    ('panasonic', 'dmr-brx2060'): ('panasonic', 'omitted', None, None),
 }
 
 
@@ -135,8 +135,14 @@ def test_fixture_recordings_keep_their_protection_values(vendor: str, model: str
 
     # Prefer the original resource (DLNA.ORG_CI=0) over a transcoded resource
     original = recordings[0].original_resource
-    assert original is not None
-    assert original.protocol_info.parameters.get('DLNA.ORG_CI') == expected_ci
+    if expected_ci is None:
+        assert original is None
+        assert all(resource.is_converted is True for resource in recordings[0].resources)
+        assert recordings[0].protection.reported_copy_counts[0].raw_value == '10'
+        assert recordings[0].protection.reported_copy_counts[0].remaining_copies.value == 9
+    else:
+        assert original is not None
+        assert original.protocol_info.parameters.get('DLNA.ORG_CI') == expected_ci
 
 
 def test_generic_profile_handles_standard_dlna_without_vendor_meaning() -> None:
