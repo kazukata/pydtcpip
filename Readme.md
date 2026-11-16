@@ -83,9 +83,9 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
 | [Sony BDZ-ZW1500](https://github.com/tsukumijima/pydtcpip/issues/2) | Reported | Reported | Reported (10 seconds) | Unverified | Unverified |
-| [Sharp AQUOS BD-W2700](https://github.com/tsukumijima/pydtcpip/issues/1) | Reported (see below) | Reported | Unverified | Unverified | Unverified |
-
-Panasonic's full-recording saves were tested through the library API. Playback warnings and an interrupted large transfer remain under investigation; see [#11](https://github.com/tsukumijima/pydtcpip/issues/11).
+| [Sony BDZ-FBT2200](https://github.com/tsukumijima/pydtcpip/issues/12) | Unverified | Reported (API) | Reported | Unverified | Unverified |
+| [Sony PC TV Plus](https://github.com/tsukumijima/pydtcpip/issues/13) | Unverified | Reported with fresh connections | Reported (full recordings, API) | Unverified | Unverified |
+| [Sharp AQUOS BD-W2700](https://github.com/tsukumijima/pydtcpip/issues/1) | Reported | Reported | Unverified | Unverified | Unverified |
 
 If discovery fails on Windows, select your PC's LAN address with `--interface`. For a Buffalo nasne that stops appearing in discovery, connect directly with `--server` and its device description URL.
 
@@ -100,6 +100,7 @@ Profiles marked as unverified in the CLI still require hardware validation of th
 | --- | --- | --- |
 | Panasonic DIGA / VIERA | `panasonic` | Resource copy counts, chapter URLs, Panasonic extension fields and detection of converted resources using URLs and HD/VGA references |
 | Sony BDZ | `sony_bdz` | Copy counts, chapter URLs, recording details, actual recording start and storage information from advertised services |
+| Sony PC TV Plus | `sony_pctv` | Copy counts from Sony metadata |
 | Sharp AQUOS | `sharp` | Copy counts, chapter URLs and Sharp extension fields |
 | I-O DATA REC-ON | `recon` | Resource copy counts and chapters through an advertised tag action |
 | I-O DATA RECBOX | `recbox` | Recorder-specific copy-count fields and chapter references retained by the server |
