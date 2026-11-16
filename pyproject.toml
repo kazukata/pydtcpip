@@ -1,6 +1,6 @@
 [project]
 name = "pydtcpip"
-version = "0.1.0"
+version = "0.2.0"
 description = "Unofficial Python implementation of DTCP-IP with DLNA/UPnP support, an async API, and a CLI for streaming and transferring recordings"
 readme = "Readme.md"
 license = "MIT"
