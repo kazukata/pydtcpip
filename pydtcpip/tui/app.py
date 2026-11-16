@@ -70,7 +70,6 @@ _SORT_ORDERS = ('date', 'title', 'size', 'copies')
 _CHECKING = 'Checking...'
 _FIXED_COLUMNS = {
     'mark': 1,
-    'transfer': 8,
     'date': 16,
     'duration': 7,
     'quality': 18,
@@ -593,7 +592,6 @@ class PyDTCPIPApp(App[None]):
         self._title_width = max(20, available - sum(_FIXED_COLUMNS.values()) - 2 * (len(_FIXED_COLUMNS) + 1))
         table.clear(columns=True)
         table.add_column('', width=_FIXED_COLUMNS['mark'], key='mark')
-        table.add_column('Transfer', width=_FIXED_COLUMNS['transfer'], key='transfer')
         table.add_column('Title', width=self._title_width, key='title')
         table.add_column('Date', width=_FIXED_COLUMNS['date'], key='date')
         table.add_column('Length', width=_FIXED_COLUMNS['duration'], key='duration')
@@ -684,7 +682,7 @@ class PyDTCPIPApp(App[None]):
             recording (Recording): Listed recording
 
         Returns:
-            Text: Short state, or empty text when the recording has not been queued
+            Text: One-letter state, or empty text when the recording has not been queued
         """
 
         if self._current_udn is None:
@@ -693,16 +691,16 @@ class PyDTCPIPApp(App[None]):
         if item is None:
             return Text('')
         if item.status == 'waiting':
-            return Text('Queued', style='cyan')
+            return Text('Q', style='cyan')
         if item.is_active is True:
-            return Text('Moving', style='bold yellow')
+            return Text('M', style='bold yellow')
         if item.status == 'completed':
-            return Text('Done', style='green')
+            return Text('D', style='green')
         if item.status in ('resume_required', 'finalize_rejected'):
-            return Text('Resume!' if item.status == 'resume_required' else 'Check', style='bold red')
+            return Text('R' if item.status == 'resume_required' else 'C', style='bold red')
         if item.status == 'failed':
-            return Text('Failed', style='red')
-        return Text('Stopped', style='dim')
+            return Text('F', style='red')
+        return Text('S', style='dim')
 
     def _row(self, item: Container | Recording) -> list[Text | str]:
         """
@@ -717,19 +715,19 @@ class PyDTCPIPApp(App[None]):
 
         if isinstance(item, Container):
             count = f'{item.child_count} items' if item.child_count is not None else ''
-            return ['', '', Text(f'{item.title}/', style='bold cyan'), '', '', count, '', '', '']
+            return ['', Text(f'{item.title}/', style='bold cyan'), '', '', count, '', '', '']
         resource = self._move_resource(item)
         selection = self._selection_for(item)
-        mark = Text('')
+        # Queued recordings leave the selection, so the column shows the transfer state unless selected again
+        mark = self._transfer_label(item)
         if selection is not None:
-            mark = Text('*' if selection.resource_index is not None else 'x', style='bold green')
+            mark = Text('\u25a0', style='bold yellow' if selection.resource_index is not None else 'bold green')
         quality = Text('No original', style='yellow') if resource is None else Text(resource.quality_label)
         if resource is not None and resource.is_original_quality is not True:
             quality.stylize('yellow')
         title = Text(item.title, style='dim' if is_broadcast(item) else '')
         return [
             mark,
-            self._transfer_label(item),
             title,
             display.format_date(item.date),
             display.format_duration(resource.duration if resource is not None else item.duration),
@@ -1132,7 +1130,7 @@ class PyDTCPIPApp(App[None]):
         if item.id not in table.rows:
             return
         for column, value in zip(
-            ('mark', 'transfer', 'title', 'date', 'duration', 'quality', 'size', 'copies', 'channel'),
+            ('mark', 'title', 'date', 'duration', 'quality', 'size', 'copies', 'channel'),
             self._row(item),
             strict=True,
         ):

@@ -300,7 +300,7 @@ async def test_selected_recordings_move_in_sequence(
                     await pilot.press('enter')
                     await _wait(pilot.pause, lambda: _table(app).row_count == 1)
                     # The genre listing refers to the selected recording, so it shows as selected
-                    assert str(_table(app).get_row_at(0)[0]) == 'x'
+                    assert str(_table(app).get_row_at(0)[0]) == '\u25a0'
                     await pilot.press('m')
                     await _wait(pilot.pause, lambda: isinstance(app.screen, ConfirmMoveScreen))
                     warnings = str(app.screen.query_one('#confirm-warnings').render())
@@ -719,11 +719,11 @@ async def test_queue_states_appear_in_the_recording_table(tmp_path: Path) -> Non
                 app._queue.append(item)  # pyright: ignore[reportPrivateUsage]
             await pilot.pause(0.7)
             table = _table(app)
-            column = table.get_column_index('transfer')
+            column = table.get_column_index('mark')
             labels = {
                 _rows(app)[row]: str(table.get_cell_at(Coordinate(row, column))) for row in range(table.row_count)
             }
-            assert labels == {'Recording 0': 'Done', 'Recording 1': 'Queued', 'Recording 2': ''}
+            assert labels == {'Recording 0': 'D', 'Recording 1': 'Q', 'Recording 2': ''}
 
 
 @pytest.mark.anyio
@@ -756,7 +756,7 @@ async def test_titles_with_brackets_are_shown_verbatim(tmp_path: Path) -> None:
             await _wait(
                 pilot.pause, lambda: _table(app).row_count == 1 and '[/folder]' in str(app.query_one('#path').render())
             )
-            assert title in str(_table(app).get_row_at(0)[2])
+            assert title in str(_table(app).get_row_at(0)[1])
             await pilot.press('v')
             await _wait(pilot.pause, lambda: isinstance(app.screen, ResourceScreen))
             assert title in str(app.screen.query_one('.dialog-title').render())

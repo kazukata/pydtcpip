@@ -305,7 +305,7 @@ When the cursor rests on a recording, the details pane also shows every advertis
 | `+` | Add a recorder by its device description URL when discovery does not find it |
 | `l` / `q` | Show the log / quit |
 
-The Transfer column shows recordings queued during the session as Queued, Moving, Done, Resume! (finalization must be resumed), Check (the source rejected finalization), Failed or Stopped.  
+Selected recordings are marked with `■` (yellow when another quality is chosen), and the same column shows the state of recordings queued during the session: `Q` queued, `M` moving, `D` done, `R` finalization must be resumed, `C` the source rejected finalization, `F` failed and `S` stopped.  
 To filter while a Japanese input method is in kana mode, `・` and `／` also open the title filter.
 
 The mouse works as in htop: a click moves the cursor, a double click opens or selects the row, the wheel moves the cursor, and clicking a column heading sorts by that column.
