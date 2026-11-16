@@ -1740,7 +1740,8 @@ class PyDTCPIPApp(App[None]):
     def _refresh_queue(self) -> None:
         """Update the queue table and status line."""
 
-        if self.is_mounted is False:
+        # The interval keeps firing while the application closes, after its widgets are removed
+        if self.is_mounted is False or self.is_running is False:
             return
         table: DataTable[Text | str] = self.query_one('#queue', DataTable)
         table.display = len(self._queue) > 0
