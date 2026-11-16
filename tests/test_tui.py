@@ -1,6 +1,7 @@
 """Drive the interactive interface against fake recorders and transfer sources."""
 
 import asyncio
+import sys
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime
@@ -9,7 +10,6 @@ from pathlib import Path
 import pytest
 from textual import events
 from textual.coordinate import Coordinate
-from textual.drivers.linux_driver import LinuxDriver
 from textual.messages import InBandWindowResize
 from textual.widgets import Button, DataTable, Input
 from typer.testing import CliRunner
@@ -37,7 +37,6 @@ from pydtcpip.operations import recording_output_path, resume_state_path
 from pydtcpip.store import DeviceStore
 from pydtcpip.tui import display
 from pydtcpip.tui.app import PyDTCPIPApp, Selection, TransferRunner
-from pydtcpip.tui.driver import CellMouseDriver
 from pydtcpip.tui.screens import ChoiceScreen, ConfirmMoveScreen, ResourceScreen
 from pydtcpip.tui.state import QueueItem
 from tests.fakes import (
@@ -659,8 +658,13 @@ async def test_clicking_side_panes_keeps_keyboard_navigation(tmp_path: Path) -> 
                 assert _table(app).cursor_row == before + 1, pane
 
 
+@pytest.mark.skipif(sys.platform == 'win32', reason='The Linux driver requires termios')
 def test_driver_keeps_mouse_coordinates_in_cells(monkeypatch: pytest.MonkeyPatch) -> None:
     """Terminals offering in-band resize stay in cell mouse mode, since iTerm2 cannot be recognized over SSH."""
+
+    from textual.drivers.linux_driver import LinuxDriver
+
+    from pydtcpip.tui.driver import CellMouseDriver
 
     forwarded: list[object] = []
 
