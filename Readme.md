@@ -57,9 +57,11 @@ pydtcpip is a foundation library for recovering broadcast recordings from aging 
 - **Streaming reception without consuming the copy count**: Data delivery with backpressure control through asynchronous callbacks, and transfer to FFplay or similar tools through standard output (`stream`)
 - **Diagnostic data export**: Export of protocol responses from unsupported models with identifying information and program titles masked for issue reports (`dump --mask-private`)
 
-Transfers select the main recording in its stored quality, using `DLNA.ORG_CI` and family-specific metadata to distinguish it from converted and mobile versions. An AVC or nasne three-times recording is transferred in that recorded format; original quality does not require DR mode. Dedicated Move URLs are preferred for dubbing and excluded from automatic streaming selection.
+Transfers select the main recording in its stored quality, using `DLNA.ORG_CI` and family-specific metadata to distinguish it from converted and mobile versions. An AVC or nasne three-times recording is transferred in that recorded format; original quality does not require DR mode. Dedicated Move resources are preferred for dubbing and excluded from streaming selection, including explicit selection with `--resource`.
 
-`info` displays the default streaming and Move resources and distinguishes the main recording from converted or mobile versions. If the device supplies insufficient information, the CLI warns that the selected resource's quality is unknown. To select a converted or mobile version explicitly, pass its resource URL to `stream` or `move --url`.
+`info` numbers resources in the order advertised by the device, identifies the default streaming and Move selections, and distinguishes the main recording from converted or mobile versions. It displays device-provided mode names when available, together with reported resolution, codec and bitrate, such as `1280x720 (AVC / 3 Mbps)`. If the device supplies insufficient information, the CLI warns that the selected resource's quality is unknown.
+
+To select a resource explicitly, pass its number from `info` as `--resource N` to `stream` or `move` for the same recording. Alternatively, pass its URL to `stream URL` or `move recording.m2ts --url URL`. Resource numbers and direct URLs are mutually exclusive; `--resource` cannot be combined with a URL.
 
 ## Supported devices
 
@@ -191,48 +193,32 @@ $ pydtcpip discover
 │ REGZA-43Z570L │ TOSHIBA TVS REGZA │ 43Z570L │ toshiba_regza_tv │ http://192.168.1.73:20003/description.xml │
 │ DBR-Z620      │ TOSHIBA           │ DBRZ6   │ toshiba          │ http://192.168.1.44:55247/dms/            │
 └───────────────┴───────────────────┴─────────┴──────────────────┴───────────────────────────────────────────┘
+```
 
-# Select a device and recording, and display the ID, program information, and protection information
-$ pydtcpip info
-                                 Recorders
-┏━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
-┃ Number ┃ Name          ┃ Manufacturer      ┃ Model   ┃ Profile          ┃
-┡━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
-│      1 │ REGZA-43Z570L │ TOSHIBA TVS REGZA │ 43Z570L │ toshiba_regza_tv │
-│      2 │ DBR-Z620      │ TOSHIBA           │ DBRZ6   │ toshiba          │
-└────────┴───────────────┴───────────────────┴─────────┴──────────────────┘
-Recorder number [1/2]: 1
-                  REGZA-43Z570L contents
-┏━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━━━┓
-┃ Number ┃ Type   ┃ Name       ┃ Date ┃ Copies remaining ┃
-┡━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━━━┩
-│      1 │ Folder │ すべて     │      │                  │
-│      2 │ Folder │ 未視聴     │      │                  │
-│      3 │ Folder │ 曜日別     │      │                  │
-│      4 │ Folder │ ジャンル別 │      │                  │
-│      5 │ Folder │ 連ドラ別   │      │                  │
-└────────┴────────┴────────────┴──────┴──────────────────┘
-Number [1/2/3/4/5]: 1
-                                                 REGZA-43Z570L contents
-┏━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Number ┃ Type      ┃ Name                                             ┃ Date                ┃ Copies remaining       ┃
-┡━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
-│      1 │ Recording │ モーサテサタデー【アンソロピック上場へ】         │ 2026-11-14T10:00:00 │ Not reported by device │
-│      2 │ Recording │ 昼サテ                                          │ 2026-11-13T11:13:00 │ Not reported by device │
-└────────┴───────────┴──────────────────────────────────────────────────┴─────────────────────┴────────────────────────┘
-Number [1/2]: 1
-                             モーサテサタデー【アンソロピック上場へ】
-┌───────────────────────────────────────┬─────────────────────────────────────────────────────────┐
-│ ID                                    │ 20100200000000/2010_M000020261114095950000000000001.dtv │
-│ Date                                  │ 2026-11-14T10:00:00                                     │
-│ Duration                              │ 0:55:03.000                                             │
-│ Channel                               │ テレ東                                                  │
-│ Copies remaining (recording metadata) │ Not reported by device                                  │
-│ Move support (protocolInfo)           │ Not reported by device                                  │
-│ Transfer copy control                 │ Available after transfer starts                         │
-│ Resource 1                            │ Original format DTCP_MPEG_TS_JP_T                       │
-│ Resource 2                            │ Original format MPEG_TTS_CP                             │
-└───────────────────────────────────────┴─────────────────────────────────────────────────────────┘
+Run `pydtcpip info` to select a recorder and recording interactively, or specify both directly as below. This example uses synthetic recording metadata; the available fields and quality options depend on the device.
+
+```text
+$ pydtcpip info --server http://192.0.2.20:5000/description.xml --id V_42 --basic
+Profile: generic
+                                 Example recording
+┌───────────────────────────────────────────────┬─────────────────────────────────┐
+│ ID                                            │ V_42                            │
+│ Date                                          │ 2026-01-01T20:00:00+09:00       │
+│ Duration                                      │ 0:30:00.000                     │
+│ Channel                                       │ Example channel                 │
+│ Copies remaining (recording metadata)         │ Unsupported format              │
+│ Selected resource Move support (protocolInfo) │ Yes                             │
+│ Transfer copy control                         │ Available after transfer starts │
+│ Resource 1                                    │ 1920x1080 (MPEG-2 / 18 Mbps)    │
+│ Resource 1: Recording version                 │ Original recording              │
+│ Resource 1: DLNA.ORG_PN                       │ DTCP_MPEG_TS_JP_T               │
+│ Resource 1: Default selection                 │ Streaming, Move                 │
+│ Resource 1: Duration                          │ 0:30:00.000                     │
+│ Resource 2                                    │ 1280x720 (AVC / 3 Mbps)         │
+│ Resource 2: Recording version                 │ Converted or mobile version     │
+│ Resource 2: DLNA.ORG_PN                       │ DTCP_AVC_TS_JP_AAC_T            │
+│ Resource 2: Duration                          │ 0:30:00.000                     │
+└───────────────────────────────────────────────┴─────────────────────────────────┘
 ```
 
 `info` also displays scheduled broadcast times, video/audio information, original copy-count values and available chapters. Sony-compatible services and nasne can supply additional recording details.  
@@ -254,6 +240,8 @@ This method is completed entirely through operations on the PC (client), without
 ```bash
 $ pydtcpip move recording.m2ts
 ```
+
+To choose a different quality, inspect the same recording with `info`, then pass its resource number. For example, `pydtcpip move recording.m2ts --resource 2` uses resource 2 after interactive recording selection. Omit `--resource` to use the default stored recording.
 
 > [!NOTE]  
 > **Some recording device models do not store program information or time information in the SIT (Selection Information Table) of MPEG2-TS recordings (partial TS).**  
@@ -353,8 +341,19 @@ $ pydtcpip stream --server http://192.0.2.20:5000/description.xml --id RECORDING
   -i pipe:0
 ```
 
+To select a particular quality in a script, use the number shown by `info` for that recording. The following examples select resource 2 for each operation; a resource marked `Move only` is available to `move`, but not to `stream`.
+
+```bash
+$ pydtcpip move recording.m2ts --server http://192.0.2.20:5000/description.xml --id RECORDING_ID --resource 2 --yes
+$ pydtcpip stream --server http://192.0.2.20:5000/description.xml --id RECORDING_ID --resource 2 | ffplay -loglevel panic -nostats -autoexit \
+  -vf 'yadif=mode=send_field:parity=auto:deint=interlaced' \
+  -scodec libaribcaption -sub_type bitmap \
+  -i pipe:0
+```
+
 > [!NOTE]  
 > If the URL of the served resource is known, you can also specify it directly, as in `stream URL` or `move recording.m2ts --url URL --yes`.  
+> Use either `--resource N` with a recording or a direct URL; combining them is an error.
 > When you specify a URL directly, the DLNA recording listing is not retrieved, so program metadata sidecars and the remaining copy count from metadata are unavailable.  
 
 ### 7. Firewall and network settings
