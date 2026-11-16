@@ -1,5 +1,7 @@
 """Exercise sink authentication against a fake source on 127.0.0.1."""
 
+import asyncio
+
 import pytest
 
 from pydtcpip.dtcp.ake import AuthenticationResult, SRMUpdateCallback, authenticate, open_ake_connection
@@ -50,6 +52,8 @@ async def _authenticate(
     finally:
         writer.close()
         await writer.wait_closed()
+        # Let the source process the final acceptance before its context closes active connections
+        await asyncio.wait_for(source.disconnected.wait(), timeout=5)
 
 
 @pytest.mark.anyio
