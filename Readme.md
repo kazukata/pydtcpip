@@ -249,6 +249,9 @@ $ pydtcpip move recording.m2ts
 
 To choose a different quality, inspect the same recording with `info`, then pass its resource number. For example, `pydtcpip move recording.m2ts --resource 2` uses resource 2 after interactive recording selection. Omit `--resource` to use the default stored recording.
 
+Recordings that the device reports as protected (`upnp:writeStatus` is `PROTECTED`) are not moved; release the protection on the recording device first.  
+If the device refuses to start a Move, for example while it is recording, `move` fails before any data is transferred and no copy is consumed; try again later.
+
 > [!NOTE]  
 > **Some recording device models do not store program information or time information in the SIT (Selection Information Table) of MPEG2-TS recordings (partial TS).**  
 > This information generally appears to be stored in recordings made on REGZA TVs.
@@ -312,7 +315,7 @@ The mouse works as in htop: a click moves the cursor, a double click opens or se
 
 `m` opens a confirmation listing each recording with its copy count, size and destination file, together with warnings for recordings that only have the final Move left, unknown copy counts and versions other than the stored recording.  
 Recordings are saved as `<title>-<identifier>.m2ts` in the directory given to `tui`, which can also be changed on the confirmation screen, with the same XML and JSON metadata files as the `move` subcommand, and are transferred one at a time.  
-Recordings whose destination files already exist are excluded, and a recording listed in several folders is moved only once.
+Recordings whose destination files already exist and recordings that the device reports as protected are excluded, and a recording listed in several folders is moved only once.
 
 > [!WARNING]  
 > **Each Move consumes one copy from the source, and a recording with only the final Move left, or one that prohibits copying, is deleted from the source.**  

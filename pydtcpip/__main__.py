@@ -67,6 +67,7 @@ from pydtcpip.operations import (
     collect_move_metadata,
     existing_move_outputs,
     is_broadcast,
+    is_protected,
     load_resume_sidecar,
     load_resume_state,
     query_copy_count,
@@ -849,6 +850,15 @@ def move(
                 recording = await _select_recording(media_server, object_id)
                 if is_broadcast(recording) is True:
                     console.print(f'[red]{recording.title} is a live channel and cannot be moved.[/red]')
+                    raise typer.Exit(1)
+                if is_protected(recording) is True:
+                    console.print(
+                        Text(
+                            f'{recording.title} is protected on the source. Release the protection on the source '
+                            'before moving it.',
+                            style='red',
+                        )
+                    )
                     raise typer.Exit(1)
                 target = _choose_resource(recording, for_move=True, resource_index=resource_index)
 

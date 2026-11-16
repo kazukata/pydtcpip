@@ -141,6 +141,20 @@ def is_broadcast(recording: Recording) -> bool:
     return recording.upnp_class.startswith('object.item.videoItem.videoBroadcast')
 
 
+def is_protected(recording: Recording) -> bool:
+    """
+    Determine whether the source protects a recording, which prevents moving it until the protection is released.
+
+    Args:
+        recording (Recording): Recording to inspect
+
+    Returns:
+        bool: True when upnp:writeStatus is PROTECTED
+    """
+
+    return recording.write_status == 'PROTECTED'
+
+
 def select_resource(recording: Recording, *, for_move: bool = False, resource_index: int | None = None) -> Resource:
     """
     Select the stored recording by default, or an explicitly requested resource.

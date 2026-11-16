@@ -36,6 +36,7 @@ from pydtcpip.operations import (
     collect_move_metadata,
     existing_move_outputs,
     is_broadcast,
+    is_protected,
     load_resume_sidecar,
     load_resume_state,
     query_copy_count,
@@ -992,6 +993,12 @@ class PyDTCPIPApp(App[None]):
             if is_broadcast(item) is True:
                 self.notify('Live channels cannot be moved.', severity='warning')
                 return
+            if is_protected(item) is True:
+                self.notify(
+                    'This recording is protected on the recorder. Release the protection on the recorder to move it.',
+                    severity='warning',
+                )
+                return
             if display.default_move_resource(item, None) is None:
                 self.notify(
                     'This recording has no original-quality resource. Press v to choose another version.',
@@ -1064,6 +1071,7 @@ class PyDTCPIPApp(App[None]):
             for item in self._objects.values()
             if isinstance(item, Recording)
             and is_broadcast(item) is False
+            and is_protected(item) is False
             and display.default_move_resource(item, None) is not None
             and self._matches_filter(item.title)
         ]
@@ -1322,6 +1330,8 @@ class PyDTCPIPApp(App[None]):
             excluded: str | None = None
             if resource is None:
                 excluded = 'no resource to move'
+            elif is_protected(recording) is True:
+                excluded = 'protected on the recorder'
             elif (selection.udn, recording.reference_id or recording.id) in blocked:
                 excluded = blocked[(selection.udn, recording.reference_id or recording.id)]
             elif output in outputs:

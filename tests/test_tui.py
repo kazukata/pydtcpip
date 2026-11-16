@@ -769,6 +769,33 @@ async def test_titles_with_brackets_are_shown_verbatim(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
+async def test_protected_recordings_are_not_moved(tmp_path: Path) -> None:
+    """Recordings protected on the recorder cannot be selected and are excluded from the confirmation."""
+
+    protected = didl_recording(
+        'A1',
+        '0',
+        'Protected',
+        dtcp_resource('http://192.0.2.1/protected'),
+        fields='<upnp:writeStatus>PROTECTED</upnp:writeStatus>',
+    )
+    folders = {'0': [protected, _recording('A2', '0', 'Normal', 'http://192.0.2.1/normal')]}
+    async with FakeRecorder(folders, udn=_UDN) as recorder:
+        async with _launch(recorder, tmp_path, tmp_path / 'device') as (app, _), app.run_test(size=(200, 50)) as pilot:
+            await _wait(pilot.pause, lambda: _table(app).row_count == 2)
+            await pilot.press('enter')
+            _highlight(app, 'Protected')
+            await pilot.press('space')
+            assert app._selection == {}  # pyright: ignore[reportPrivateUsage]
+            await pilot.press('a')
+            assert [selection.recording.title for selection in app._selection.values()] == ['Normal']  # pyright: ignore[reportPrivateUsage]
+            recording = next(item for item in app._objects.values() if item.title == 'Protected')  # pyright: ignore[reportPrivateUsage]
+            assert isinstance(recording, Recording)
+            entries = app._confirm_entries([Selection(_UDN, recording)], tmp_path)  # pyright: ignore[reportPrivateUsage]
+            assert entries[0].excluded == 'protected on the recorder'
+
+
+@pytest.mark.anyio
 async def test_interrupted_move_found_on_disk_blocks_moving_the_recording_again(tmp_path: Path) -> None:
     """An interrupted Move from an earlier session keeps its recording identity, even for another destination."""
 
