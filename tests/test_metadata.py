@@ -247,7 +247,7 @@ class MetadataSource:
             actions = (
                 [self.action]
                 if request.path == '/scpd.xml'
-                else ['X_GetTitleList2', 'X_GetTitleInfo', 'X_GetMediaInfo']
+                else ['X_GetTitleList2', 'X_GetTitleDetail', 'X_GetTitleInfo', 'X_GetMediaInfo']
             )
             entries = ''.join(f'<action><name>{name}</name></action>' for name in actions if name)
             return web.Response(
@@ -300,6 +300,9 @@ class MetadataSource:
         elif name == 'X_GetTitleInfo':
             assert arguments == {'TitleID': '00000000000000002a'}
             result = '<root><recordStartDate>2026-01-01T19:59:57</recordStartDate><startPTS>270000</startPTS></root>'
+        elif name == 'X_GetTitleDetail':
+            assert arguments == {'Id': '00000000000000002a'}
+            result = '<root><summary>Program summary</summary><detail0>First section</detail0><detail7>Last section</detail7><size>1200</size></root>'
         elif name == 'X_GetMediaInfo':
             assert arguments == {'recordDestinationID': 'HDD'}
             result = '<root><freeCapacity>123456789</freeCapacity></root>'
@@ -421,10 +424,12 @@ async def test_metadata_collection_and_sidecars(
         assert [(query.name, query.status) for query in metadata.queries] == [
             ('chapters', 'known'),
             ('recording_details', 'known'),
+            ('recording_description', 'known'),
             ('recording_start', 'known'),
             ('storage', 'known'),
         ]
         assert '270000' in metadata.model_dump_json()
+        assert 'Last section' in metadata.model_dump_json()
     output = tmp_path / 'recording.m2ts'
     sidecar = MetadataSidecar(output, metadata)
     sidecar.on_event(AuthenticationCompleted(transfer_id='test', exchange_key_label=7))
@@ -434,10 +439,78 @@ async def test_metadata_collection_and_sidecars(
     saved = RecordingMetadata.model_validate_json(output.with_suffix('.metadata.json').read_bytes())
     assert saved.recording == recording
     assert saved.chapters == metadata.chapters
+    assert saved.queries == metadata.queries
     assert [event['type'] for event in saved.transfer_events] == ['move_completed']
     assert output.with_suffix('.xml').read_text(encoding='utf-8') == recording.raw_xml
     with pytest.raises(FileExistsError):
         MetadataSidecar(output, metadata)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('encoding', ['document', 'fragment', 'embedded', 'failed', 'unsupported'])
+async def test_sony_descriptions_reach_cli_and_archive(encoding: str, tmp_path: Path) -> None:
+    source = MetadataSource('Sony', 'BDZ-TEST', recording_xml().replace(' refID="42"', ''))
+    fields = '<summary>Program &amp; summary</summary><detail0>First section</detail0><detail7>Last section</detail7>'
+    if encoding == 'unsupported':
+        source.response_bodies['/pvr.xml'] = (
+            b'<scpd xmlns="urn:schemas-upnp-org:service-1-0"><actionList><action><name>X_GetTitleList2</name></action>'
+            b'<action><name>X_GetTitleInfo</name></action><action><name>X_GetMediaInfo</name></action></actionList></scpd>'
+        )
+    elif encoding != 'document':
+        content = fields if encoding == 'embedded' else escape(fields if encoding == 'fragment' else '<broken>')
+        source.response_bodies['X_GetTitleDetail'] = (
+            f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
+            f'<u:X_GetTitleDetailResponse xmlns:u="{_PVR}"><Result>{content}</Result>'
+            '</u:X_GetTitleDetailResponse></s:Body></s:Envelope>'
+        ).encode()
+    async with source.serve() as (location, _):
+        args = ['info', '--server', location, '--id', 'V_42']
+        result = await asyncio.to_thread(CliRunner().invoke, app, [*args, '--json'])
+        assert result.exit_code == 0, result.output
+        metadata = RecordingMetadata.model_validate_json(result.stdout)
+        queries = {query.name: query for query in metadata.queries}
+        expected_status = encoding if encoding in ('failed', 'unsupported') else 'known'
+        assert queries['recording_description'].status == expected_status
+        assert queries['recording_start'].status == 'known'
+        assert queries['storage'].status == 'known'
+        output = tmp_path / 'recording.m2ts'
+        MetadataSidecar(output, metadata)
+        saved = RecordingMetadata.model_validate_json(output.with_suffix('.metadata.json').read_bytes())
+        assert saved.queries == metadata.queries
+        display = await asyncio.to_thread(CliRunner().invoke, app, args)
+        assert display.exit_code == 0, display.output
+        if expected_status == 'known':
+            assert 'Last section' in display.output
+            assert 'First section' in display.output
+            assert 'Last section' in saved.model_dump_json()
+        if encoding == 'unsupported':
+            assert all(action != 'X_GetTitleDetail' for action, _ in source.calls)
+        elif encoding != 'document':
+            assert source.response_bodies['X_GetTitleDetail'] in [response.body for response in saved.responses]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('is_embedded', [True, False])
+async def test_sony_start_fields_without_document_wrapper(is_embedded: bool) -> None:
+    source = MetadataSource('Sony', 'BDZ-TEST', recording_xml().replace(' refID="42"', ''))
+    fields = '<recordStartDate>2026-01-01T19:59:57</recordStartDate><startPTS>270000</startPTS>'
+    content = fields if is_embedded else escape(fields)
+    source.response_bodies['X_GetTitleInfo'] = (
+        f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
+        f'<u:X_GetTitleInfoResponse xmlns:u="{_PVR}"><Result>{content}</Result>'
+        '</u:X_GetTitleInfoResponse></s:Body></s:Envelope>'
+    ).encode()
+    async with source.serve() as (location, _), DLNAClient() as dlna:
+        server = await dlna.get_server(location)
+        recording = await server.get_metadata('V_42')
+        assert isinstance(recording, Recording)
+        metadata = await server.collect_metadata(recording)
+    start = next(query for query in metadata.queries if query.name == 'recording_start')
+    assert start.status == 'known'
+    assert start.data is not None
+    assert '2026-01-01T19:59:57' in start.model_dump_json()
+    assert '270000' in start.model_dump_json()
+    assert source.response_bodies['X_GetTitleInfo'] in [response.body for response in metadata.responses]
 
 
 @pytest.mark.anyio

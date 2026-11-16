@@ -129,6 +129,15 @@ class SonyExtension(MetadataExtension):
                 return (MetadataQuery(name='recording_details', status='omitted'),)
         if title.id is not None:
             try:
+                detail = await self.get_title_detail(title.id)
+                queries.append(
+                    MetadataQuery(name='recording_description', status='known', data=detail.model_dump(mode='json'))
+                )
+            except UnsupportedActionError:
+                queries.append(MetadataQuery(name='recording_description', status='unsupported'))
+            except DLNAError as ex:
+                queries.append(MetadataQuery(name='recording_description', status='failed', error=str(ex)))
+            try:
                 info = await self.get_title_info(title.id)
                 queries.append(MetadataQuery(name='recording_start', status='known', data=info.model_dump(mode='json')))
             except UnsupportedActionError:
@@ -169,7 +178,19 @@ class SonyExtension(MetadataExtension):
         if raw_result is None:
             raise DLNAError(f'{action} returned no Result argument.')
         try:
-            root = ET.fromstring(raw_result)
+            if action in ('X_GetTitleDetail', 'X_GetTitleInfo'):
+                # Title fields may be embedded in Result or escaped as an XML fragment
+                envelope = ET.fromstring(result.raw_xml)
+                body = envelope.find('{http://schemas.xmlsoap.org/soap/envelope/}Body')
+                assert body is not None  # Validated by call_action
+                root = next(child for child in body[0] if child.tag.rpartition('}')[2] == 'Result')
+                if len(root) == 0:
+                    try:
+                        root = ET.fromstring(raw_result)
+                    except ET.ParseError:
+                        root = ET.fromstring(f'<Result>{raw_result}</Result>')
+            else:
+                root = ET.fromstring(raw_result)
         except ET.ParseError as ex:
             raise DLNAError(f'Could not parse the {action} metadata XML.') from ex
         elements: list[ET.Element] = []
@@ -230,6 +251,21 @@ class SonyExtension(MetadataExtension):
                 'SortCriteria': '-scheduledStartDateTime',
             },
         )
+
+    async def get_title_detail(self, title_id: str) -> SonyMetadataResult:
+        """
+        Retrieve the program summary and detailed description sections separately from the title list.
+        Original summary, detail0 through detail7 and size values remain independent fields.
+
+        Args:
+            title_id (str): Title ID returned by get_title_list, not a ContentDirectory object ID
+
+        Returns:
+            SonyMetadataResult: Description fields with their original representation
+        """
+
+        service, action = await self._find_action(((_PVR_CONTROL, 'X_GetTitleDetail'),))
+        return await self._query(service, action, {'Id': title_id})
 
     async def get_title_info(self, title_id: str) -> SonyMetadataResult:
         """
