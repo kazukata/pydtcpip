@@ -72,8 +72,8 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 
 | Model / report | Discovery | Recording listings | Streaming (non-Move) | Move | Push dubbing reception |
 | --- | --- | --- | --- | --- | --- |
-| [Sony nasne CECH-ZNR1J](https://github.com/tsukumijima/pydtcpip/issues/3) | Reported | Reported | Unverified | Unverified | Unverified |
-| [Buffalo nasne NS-N100](https://github.com/tsukumijima/pydtcpip/issues/4) | Reported (see below) | Reported | Unverified | Unverified | Unverified |
+| [Sony nasne CECH-ZNR1J](https://github.com/tsukumijima/pydtcpip/issues/3) | Reported | Reported | Unverified | Unverified | Not supported |
+| [Buffalo nasne NS-N100](https://github.com/tsukumijima/pydtcpip/issues/4) | Reported (see below) | Reported | Unverified | Unverified | Not supported |
 | Toshiba REGZA 43Z570L | Verified | Verified | Verified | Verified | Verified |
 | [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
 | Toshiba DBR-Z620 | Verified | Verified | Verified | Verified | Verified |
@@ -83,9 +83,11 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 | [Sony BDZ-ZW1500](https://github.com/tsukumijima/pydtcpip/issues/2) | Reported | Reported | Reported (10 seconds) | Unverified | Unverified |
 | [Sharp AQUOS BD-W2700](https://github.com/tsukumijima/pydtcpip/issues/1) | Reported (see below) | Reported | Unverified | Unverified | Unverified |
 
-The Panasonic streaming report covers authentication, decryption and saving a complete recording from each of the two models through external scripts calling the library API. Both files matched the advertised cleartext size, and the source recordings and raw copy counts remained unchanged. These were non-Move transfers; the report does not verify the complete CLI workflow or the newly added Panasonic profile. Media decoding completed with warnings whose cause remains unresolved, and a separate large transfer was interrupted for an unknown reason. See [#11](https://github.com/tsukumijima/pydtcpip/issues/11) for the tested revision and limitations.
+Panasonic's full-recording saves were tested through the library API. Playback warnings and an interrupted large transfer remain under investigation; see [#11](https://github.com/tsukumijima/pydtcpip/issues/11).
 
-The Sharp and Buffalo reports used `--interface` to select a valid Windows LAN address after discovery encountered stale addresses. The discovery fix in [#5](https://github.com/tsukumijima/pydtcpip/pull/5) is now merged; confirmation from those reporters is still pending. Buffalo nasne also sometimes stopped responding to discovery; connecting with `--server` remained possible. Sony and Buffalo nasne share the `nasne` profile, which now includes the Buffalo model-name match described in [#4](https://github.com/tsukumijima/pydtcpip/issues/4).
+If discovery fails on Windows, select your PC's LAN address with `--interface`. For a Buffalo nasne that stops appearing in discovery, connect directly with `--server` and its device description URL.
+
+For nasne, use client-initiated transfers rather than `receive`: its documented controls do not provide a way to send recordings to pydtcpip. The [nasne HOME migration feature](https://www.buffalo.jp/s3/guide/ns-n100/04/ja/recorder/dubbing.html) is started from the destination nasne.
 
 Details of the implemented specification scope and design principles are summarized in [Implemented specifications and design principles](#implemented-specifications-and-design-principles) later in this document.
 
@@ -105,10 +107,7 @@ Profiles marked as unverified in the CLI still require hardware validation of th
 | STW2000 | `stb_stw2000` | Set-top box metadata and the STW2000 recording container |
 | AM900 | `stb_am900` | Set-top box metadata and the AM900 recording container |
 
-Existing Toshiba profiles also support hexadecimal copy counts and optional chapter queries. The nasne profile additionally supports recording details and chapter positions.  
-These new queries remain unverified on hardware, including devices with previously verified basic operations. nasne chapter times are estimates derived from thumbnail positions; the original positions are retained, including points that cannot be converted to a time.
-
-For Panasonic, individual recording metadata is used directly when it includes the selected resource's copy count; otherwise the CLI checks the parent listing, accommodating both behaviors reported in [#6](https://github.com/tsukumijima/pydtcpip/issues/6) and [#11](https://github.com/tsukumijima/pydtcpip/issues/11). Device-wide capability declarations are displayed separately from the recording's Move support. The JSON metadata sidecar retains these declarations and separate HEAD and GET response metadata. Media HTTP errors expose the recorder's `error-info` and `Error.pxn.panasonic.com` diagnostic fields when present.
+Toshiba profiles support copy counts and chapter queries. The nasne profile supports recording details and estimated chapter positions.
 
 > [!IMPORTANT]  
 > **DTCP-IP itself is a standard that defines mutual authentication and encrypted transfer, while recording listings and protection information are exchanged through DLNA / UPnP at the preceding stage.**  
@@ -478,6 +477,10 @@ However, whether subtitles and data broadcasts are included or only video and au
 The XML retains the established DIDL-Lite item format, with ARIB broadcast symbols converted to readable Unicode. The JSON contains parsed fields alongside the source XML values before that conversion, resource attributes, raw copy counts, their interpretation and observation times.  
 For client-initiated Move, it also includes the device description, service descriptions used by optional queries, chapters and additional responses. The source item XML is reserialized, so namespace prefixes and whitespace can differ from the response; incoming transfers additionally preserve the sender's complete `CreateObject` XML unchanged.
 The JSON's `responses` field retains complete HTTP and SOAP response bodies, headers, status codes and observation times even when their metadata format cannot be parsed.
+
+Device-wide capability declarations are kept separate from recording-specific Move permission, and HEAD and GET response metadata are recorded independently. Panasonic HTTP errors include the device's `error-info` and `Error.pxn.panasonic.com` fields when available. For Panasonic copy counts, the CLI uses individual recording metadata when sufficient and queries the parent listing when the selected resource's count is missing.
+
+nasne chapter times are estimated from thumbnail positions. The original positions are retained, including entries that cannot be converted to a time.
 
 The JSON records whether each optional query succeeded, was omitted, is unsupported, was not requested or failed. Transfer headers, copy-control observations and receipt, persistence and Move lifecycle events are appended separately; a transfer failure retains the collected metadata, and `resume` updates an existing archive.  
 If an event update fails, the CLI logs a warning and continues saving and finalizing the recording. Subsequent events retry the metadata update with the accumulated history, but the saved history can remain incomplete if the storage error persists.  
