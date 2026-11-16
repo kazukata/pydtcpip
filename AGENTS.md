@@ -73,3 +73,5 @@ Describe real-device test results, model names, observed behavior and profiles w
 The README may include general research context and indirect hints that help users ask an LLM about obtaining their own credentials. Keep those hints general enough that they do not identify the specific products analyzed or disclose the methods used.
 
 Commit message prefixes are `Add:`, `Fix:`, `Update:`, `Refactor:`, `Build(deps):`, and `Release:`.
+
+Append issue references to the subject of every issue-related commit, using `(#12, #13)` for related reports. Use `(Close #123)` on the commit that completes the work required to close a report; for multiple closures, repeat the keyword, as in `(Close #12, Close #13)`. When a commit closes one report but only contributes to another, use separate groups, such as `(#13) (Close #12)`. Determine the relationship from the issue, its comments and the actual change; a previously closed issue only needs a normal reference in later related commits. Commits with no direct issue relationship need no issue reference.
