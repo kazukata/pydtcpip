@@ -320,6 +320,7 @@ Recordings whose destination files already exist are excluded, and a recording l
 
 If a Move does not complete, the queue stops and explains whether the source may have consumed a copy.  
 A Move interrupted after finalization was requested appears in the transfer list as requiring resumption; press `Enter` on it to finalize without receiving the recording again.  
+Sources that discard their resume information after a disconnection during finalization, such as DBR-Z620, reject this resumption; see the note in [section 3](#3-saving-recordings-from-a-pc-through-move-transfers) for what is kept and how to check whether the Move was finalized.  
 Quitting during finalization waits until it finishes, and quitting during reception asks before cancelling the transfer, which keeps the copy on the source.
 
 The interface needs a terminal. For scripts and other non-interactive use, use the subcommands.
