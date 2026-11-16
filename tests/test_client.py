@@ -365,6 +365,29 @@ async def test_first_rejected_finalize_discards_received_data(
 
 
 @pytest.mark.anyio
+async def test_rejected_move_initiation_explains_the_refusal(
+    authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice, tmp_path: Path
+) -> None:
+    """A source refusing to start a Move fails before any data is received, explaining the likely causes."""
+
+    path = tmp_path / 'recording.ts'
+    async with (
+        FakeSourceAKE(authority, source_device) as source,
+        FakeMediaServer(source, _CONTENT) as server,
+        DTCPClient(sink_device.credentials(), timeout=5) as client,
+    ):
+        source.reject_initiate = True
+        with pytest.raises(
+            DTCPError, match=r'refused to start a Move of this recording.*status: 0x1.*while the source is recording'
+        ):
+            await client.move(server.url, FileSink(path))
+
+    assert source.log == ['mv_initiate_rejected']
+    assert path.exists() is False
+    assert (tmp_path / '.recording.ts.part').exists() is False
+
+
+@pytest.mark.anyio
 async def test_move_completes_when_source_rejects_complete(
     authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice, tmp_path: Path
 ) -> None:

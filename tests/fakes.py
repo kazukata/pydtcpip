@@ -233,6 +233,8 @@ class FakeSourceAKE:
         ## DBR-Z620 discards resume state on disconnect after finalization and rejects later requests
         self.reject_finalize = False
         self.reject_complete = False
+        # Whether to reject Move initiation, as REGZA 43Z570L did during a scheduled recording
+        self.reject_initiate = False
         # If set, wait for this event before finalization to represent receipt of the final HTTP response
         self.finalize_gate: asyncio.Event | None = None
 
@@ -295,6 +297,10 @@ class FakeSourceAKE:
 
                 # Move initiation signals that authentication should issue a Move-specific exchange key
                 if frame.command == MV_INITIATE:
+                    if self.reject_initiate is True:
+                        self.log.append('mv_initiate_rejected')
+                        await self._respond(writer, frame, _REJECTED)
+                        continue
                     is_move = True
                     self.log.append('mv_initiate')
                     await self._respond(writer, frame, _ACCEPTED)
