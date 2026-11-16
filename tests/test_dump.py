@@ -115,6 +115,22 @@ def test_item_fragment_without_root_is_redacted() -> None:
     assert '2020-12-31T23:59:59' not in redacted
 
 
+def test_named_quality_alternatives_keep_modes_and_matching_resource_references() -> None:
+    xml = """<DIDL-Lite xmlns:pxn="urn:schemas-panasonic-com:pxn"><item id="private-recording" parentID="0">
+    <res bitrate="1000000">http://198.51.100.20/private-recording?token=private-token</res>
+    <pxn:EncContentURI recMode="4x" bitrate="1000000" recordQuality="VENDOR:Mode A"
+      protocolInfo="http-get:*:application/x-dtcp1:DLNA.ORG_CI=1">http://198.51.100.20/private-recording?token=private-token</pxn:EncContentURI>
+    </item></DIDL-Lite>"""
+    masked = Redactor().redact_xml(xml, 'didl')
+    assert 'private-recording' not in masked
+    assert 'private-token' not in masked
+    item = ET.fromstring(masked)[0]
+    assert item[0].text == item[1].text
+    assert item[1].get('recMode') == '4x'
+    assert item[1].get('recordQuality') == 'VENDOR:Mode A'
+    assert item[1].get('bitrate') == '1000000'
+
+
 def test_recording_identifiers_and_url_references_share_replacements() -> None:
     """Replace numeric recording IDs in metadata and resource URLs consistently across files."""
 

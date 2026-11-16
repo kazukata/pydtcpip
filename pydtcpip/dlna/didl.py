@@ -66,6 +66,7 @@ def parse_didl(raw_xml: str, profile: Profile) -> list[Container | Recording]:
             element.text = element.text.translate(ARIB_PUA_TO_UNICODE)
 
     read_remaining_copy_count = profile.resolve_remaining_copy_count()
+    resource_elements = profile.resolve_resource_elements()
     objects: list[Container | Recording] = []
     for element in root:
         # Folders contain their child count and class
@@ -84,9 +85,7 @@ def parse_didl(raw_xml: str, profile: Profile) -> list[Container | Recording]:
 
         # Recordings contain program metadata, resources, and protection information
         elif element.tag == f'{{{DIDL_NAMESPACE}}}item':
-            resources = tuple(
-                _parse_resource(res, element, profile) for res in element.iterfind(f'{{{DIDL_NAMESPACE}}}res')
-            )
+            resources = tuple(_parse_resource(res, element, profile) for res in element if res.tag in resource_elements)
             metadata: dict[str, list[MetadataValue]] = {
                 'ratings': [],
                 'video_components': [],
@@ -96,6 +95,8 @@ def parse_didl(raw_xml: str, profile: Profile) -> list[Container | Recording]:
                 'vendor_metadata': [],
             }
             for child in element:
+                if child.tag in resource_elements:
+                    continue
                 category: str | None = None
                 if child.tag == f'{{{UPNP_NAMESPACE}}}rating':
                     category = 'ratings'
@@ -157,7 +158,7 @@ def parse_didl(raw_xml: str, profile: Profile) -> list[Container | Recording]:
                     icons=tuple(metadata['icons']),
                     vendor_metadata=tuple(metadata['vendor_metadata']),
                     chapter_resources=profile.read_chapter_resources(element),
-                    duration=resources[0].attributes.get('duration') if len(resources) > 0 else None,
+                    duration=next((resource.duration for resource in resources if resource.duration is not None), None),
                     resources=resources,
                     protection=_read_protection(element, resources, missing_count, counts),
                     raw_xml=ET.tostring(element, encoding='unicode'),
@@ -171,10 +172,10 @@ def parse_didl(raw_xml: str, profile: Profile) -> list[Container | Recording]:
 
 def _parse_resource(element: ET.Element, item: ET.Element, profile: Profile) -> Resource:
     """
-    Convert a res element to a resource model.
+    Convert an advertised resource element to a resource model.
 
     Args:
-        element (ET.Element): DIDL-Lite res element
+        element (ET.Element): DIDL-Lite res or a recognized family-specific resource element
         item (ET.Element): Parent item containing family-specific resource references
         profile (Profile): Device-family rules
 
@@ -194,7 +195,10 @@ def _parse_resource(element: ET.Element, item: ET.Element, profile: Profile) -> 
         attributes=dict(element.attrib),
         raw_xml=ET.tostring(element, encoding='unicode'),
         conversion=conversion,
+        recording_mode=element.get('recordQuality'),
+        frame_rate=element.get('framerate'),
     )
+    resource = profile.resource_details(resource)
     return resource.model_copy(update={'variant': profile.resource_variant(resource)})
 
 

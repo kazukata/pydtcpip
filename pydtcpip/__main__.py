@@ -397,29 +397,41 @@ def _is_broadcast(recording: Recording) -> bool:
     return recording.upnp_class.startswith('object.item.videoItem.videoBroadcast')
 
 
-def _choose_resource(recording: Recording, *, for_move: bool = False) -> Resource:
+def _choose_resource(recording: Recording, *, for_move: bool = False, resource_index: int | None = None) -> Resource:
     """
-    Select an original-format resource for lossless transfer.
+    Select the stored recording by default, or an explicitly requested resource.
 
     Args:
         recording (Recording): Recording whose resources are inspected
         for_move (bool): Select the original-quality Move endpoint instead of the streaming endpoint
+        resource_index (int | None): One-based resource number from info, or None for the default selection
 
     Returns:
         Resource: Selected DTCP-IP resource
     """
 
-    resource = recording.original_move_resource if for_move is True else recording.original_resource
+    if resource_index is not None:
+        if resource_index > len(recording.resources):
+            console.print(f'[red]Resource {resource_index} is not advertised for this recording.[/red]')
+            raise typer.Exit(1)
+        resource = recording.resources[resource_index - 1]
+        if resource.protocol_info.is_dtcp is False:
+            console.print('[red]The selected resource does not use DTCP-IP.[/red]')
+            raise typer.Exit(1)
+        if for_move is False and resource.variant is not None and resource.variant.is_move_only is True:
+            console.print('[red]The selected resource is available only for Move.[/red]')
+            raise typer.Exit(1)
+    else:
+        resource = recording.original_move_resource if for_move is True else recording.original_resource
     if resource is None:
         console.print(
             '[red]This recording has no original-quality DTCP-IP resource for this operation. '
-            'To select another quality explicitly, supply its resource URL.[/red]'
+            'Use info to inspect the available qualities, then select one with --resource or its URL.[/red]'
         )
         raise typer.Exit(1)
     if resource.is_original_quality is None:
         console.print(
-            '[yellow]The recorder does not identify the original recording quality. '
-            'Using a resource that is not identified as converted or mobile.[/yellow]'
+            '[yellow]The recorder does not identify whether the selected resource is the original recording.[/yellow]'
         )
     return resource
 
@@ -507,11 +519,12 @@ def _print_recording(recording: Recording, device_declarations: dict[str, str] |
         quality = {True: 'Original recording', False: 'Converted or mobile version', None: 'Quality unknown'}[
             resource.is_original_quality
         ]
-        # Profile names can use DLNA.ORG_PN, DLPA.JP_PN, or a vendor namespace such as TOSHIBA.CO.JP_PN
-        profile_name = next(
-            (value for name, value in resource.protocol_info.parameters.items() if name.endswith('_PN')), ''
-        )
-        table.add_row(f'Resource {index}', f'{quality} {profile_name}')
+        table.add_row(f'Resource {index}', Text(resource.quality_label))
+        table.add_row(f'Resource {index}: Recording version', quality)
+        # Keep all advertised profile identifiers; different namespaces can describe the same URL
+        for name, value in resource.protocol_info.parameters.items():
+            if name.endswith('_PN'):
+                table.add_row(f'Resource {index}: {name}', Text(value))
         uses: list[str] = []
         if resource == recording.original_resource:
             uses.append('Streaming')
@@ -523,12 +536,15 @@ def _print_recording(recording: Recording, device_declarations: dict[str, str] |
             table.add_row(f'Resource {index}: Transfer use', 'Move only')
         for label, value in (
             ('Duration', resource.duration),
-            ('Resolution', resource.resolution),
+            ('Audio channels', resource.audio_channels),
+            ('Audio sample frequency (Hz)', resource.sample_frequency),
+            ('Audio bits per sample', resource.bits_per_sample),
+            ('Usage information', resource.attributes.get('usageInfo')),
             ('HTTP size (bytes)', resource.size),
             ('Content size (bytes)', resource.cleartext_size),
         ):
             if value is not None:
-                table.add_row(f'Resource {index}: {label}', str(value))
+                table.add_row(f'Resource {index}: {label}', Text(str(value)))
     console.print(table)
     if device_declarations:
         capabilities = {name: value for name, value in device_declarations.items() if name.endswith('CAP')}
@@ -853,6 +869,9 @@ def stream(
     url: Annotated[str | None, typer.Argument(help='Resource URL (select a recorder and recording if omitted)')] = None,
     server: ServerOption = None,
     object_id: Annotated[str | None, typer.Option('--id', help='Recording ID')] = None,
+    resource_index: Annotated[
+        int | None, typer.Option('--resource', min=1, help='Resource number shown by info (default: stored recording)')
+    ] = None,
     start_ms: Annotated[int | None, typer.Option(help='Start position in milliseconds')] = None,
     end_ms: Annotated[int | None, typer.Option(help='End position in milliseconds')] = None,
     credentials: CredentialsOption = None,
@@ -861,6 +880,8 @@ def stream(
     """Stream media to an external player through standard output."""
 
     _setup_logging(verbose)
+    if url is not None and resource_index is not None:
+        raise typer.BadParameter('Use --resource with a recorder and recording, or supply a URL, separately.')
     device_credentials = _load_credentials(credentials)
     time_range: TimeRange | None = None
     if start_ms is not None or end_ms is not None:
@@ -884,7 +905,9 @@ def stream(
                 target = url
             else:
                 media_server = await _select_server(dlna, server)
-                target = _choose_resource(await _select_recording(media_server, object_id))
+                target = _choose_resource(
+                    await _select_recording(media_server, object_id), resource_index=resource_index
+                )
 
             stream_file = sys.stdout.buffer
 
@@ -927,6 +950,9 @@ def move(
     ] = None,
     server: ServerOption = None,
     object_id: Annotated[str | None, typer.Option('--id', help='Recording ID')] = None,
+    resource_index: Annotated[
+        int | None, typer.Option('--resource', min=1, help='Resource number shown by info (default: stored recording)')
+    ] = None,
     is_confirmed: Annotated[
         bool, typer.Option('--yes', '-y', help='Skip confirmation before consuming a copy')
     ] = False,
@@ -939,6 +965,8 @@ def move(
     """
 
     _setup_logging(verbose)
+    if url is not None and resource_index is not None:
+        raise typer.BadParameter('Use --resource with a recorder and recording, or supply a URL, separately.')
     device_credentials = _load_credentials(credentials)
     resume_path = _resume_state_path(output)
     metadata_path = output.with_suffix('.xml')
@@ -967,13 +995,15 @@ def move(
                 if _is_broadcast(recording) is True:
                     console.print(f'[red]{recording.title} is a live channel and cannot be moved.[/red]')
                     raise typer.Exit(1)
-                target = _choose_resource(recording, for_move=True)
+                target = _choose_resource(recording, for_move=True, resource_index=resource_index)
 
             # Show the recording and copy count with its acquisition status before asking for confirmation
             remaining = None
-            if recording is not None:
+            if recording is not None and isinstance(target, Resource):
                 _print_recording(recording, media_server.description.extensions if media_server is not None else None)
-                remaining = recording.protection.remaining_copy_count
+                console.print(f'Selected resource: {recording.resources.index(target) + 1}')
+                remaining = recording.copy_count_for(target)
+                console.print(f'Copies remaining for selected resource: {_format_protection(remaining)}')
             else:
                 console.print(
                     f'Recording: {target} (a URL was supplied, so the title and copy count were not retrieved)'
@@ -1026,12 +1056,23 @@ def move(
 
             # Query the source again and show when its copy count reflects the Move
             if media_server is not None and recording is not None and remaining is not None:
-                await _requery_copy_count(media_server, recording, remaining)
+                await _requery_copy_count(
+                    media_server,
+                    recording,
+                    remaining,
+                    resource_url=target.url if isinstance(target, Resource) else None,
+                )
 
     _execute(main(), resume_path=resume_path)
 
 
-async def _requery_copy_count(media_server: MediaServer, recording: Recording, before: ProtectionValue[int]) -> None:
+async def _requery_copy_count(
+    media_server: MediaServer,
+    recording: Recording,
+    before: ProtectionValue[int],
+    *,
+    resource_url: str | None = None,
+) -> None:
     """
     Query and display the source copy count alongside its value before the Move.
     DBR-Z620 updates the count about a minute after completion, so poll until it changes.
@@ -1040,6 +1081,7 @@ async def _requery_copy_count(media_server: MediaServer, recording: Recording, b
         media_server (MediaServer): Source recorder
         recording (Recording): Moved recording
         before (ProtectionValue[int]): Copy count obtained before the Move
+        resource_url (str | None): Selected resource URL, or None to query the default Move resource
     """
 
     if before.status != 'known':
@@ -1055,7 +1097,14 @@ async def _requery_copy_count(media_server: MediaServer, recording: Recording, b
                 return
             if isinstance(item, Container):
                 return
-            after = item.protection.remaining_copy_count
+            selected = next((resource for resource in item.resources if resource.url == resource_url), None)
+            after = (
+                item.copy_count_for(selected)
+                if selected is not None
+                else item.protection.remaining_copy_count
+                if resource_url is None
+                else ProtectionValue[int](status='omitted', source='metadata')
+            )
             if (after.status, after.value) != (before.status, before.value):
                 console.print(f'Source copies remaining: {_format_protection(before)} -> {_format_protection(after)}')
                 return

@@ -233,7 +233,7 @@ class ResourceVariant(BaseModel):
 
 
 class Resource(BaseModel):
-    """A recording resource (a DIDL-Lite res element)."""
+    """An advertised recording resource, including recognized family-specific alternatives."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -244,6 +244,8 @@ class Resource(BaseModel):
     raw_xml: str
     conversion: ResourceConversion | None = None
     variant: ResourceVariant | None = None
+    recording_mode: str | None = None
+    frame_rate: str | None = None
 
     @property
     def is_converted(self) -> bool | None:
@@ -289,6 +291,110 @@ class Resource(BaseModel):
         """
 
         return self.attributes.get('resolution')
+
+    @property
+    def video_codec(self) -> str | None:
+        """
+        Read the video codec identified by an advertised media profile.
+
+        Returns:
+            str | None: AVC, HEVC or MPEG-2, or None when the profile does not identify a codec
+        """
+
+        for name, value in self.protocol_info.parameters.items():
+            if name.endswith('_PN') is False:
+                continue
+            profile = value.removeprefix('DTCP_')
+            if profile.startswith('AVC_'):
+                return 'AVC'
+            if profile.startswith('HEVC_'):
+                return 'HEVC'
+            if profile.startswith(('MPEG_TS_', 'MPEG_PS_')):
+                return 'MPEG-2'
+        # Container-only profiles such as MPEG_TTS_CP do not identify the video codec
+        return None
+
+    @property
+    def quality_label(self) -> str:
+        """
+        Describe the quality using the device's mode name and available technical details.
+
+        Returns:
+            str: Human-readable label without inferring missing resolution, frame rate or bitrate
+        """
+
+        details: list[str] = []
+        if self.video_codec is not None:
+            details.append(self.video_codec)
+        if self.bitrate is not None:
+            details.append(f'{self.bitrate * 8 / 1_000_000:.6g} Mbps')
+        if self.frame_rate:
+            details.append(self.frame_rate)
+        label = self.resolution or ''
+        if details:
+            description = ' / '.join(details)
+            label = f'{label} ({description})' if label else description
+        if self.recording_mode:
+            label = f'{self.recording_mode}: {label}' if label else self.recording_mode
+        return label or 'Quality details not reported'
+
+    @property
+    def bitrate(self) -> int | None:
+        """
+        Read the advertised bitrate without estimating it from the recording size.
+
+        Returns:
+            int | None: Bitrate in bytes per second, as defined by UPnP, or None when absent or invalid
+        """
+
+        return self._numeric_attribute('bitrate')
+
+    @property
+    def audio_channels(self) -> int | None:
+        """
+        Read the advertised number of audio channels.
+
+        Returns:
+            int | None: Channel count, or None when absent or invalid
+        """
+
+        return self._numeric_attribute('nrAudioChannels')
+
+    @property
+    def sample_frequency(self) -> int | None:
+        """
+        Read the advertised audio sampling frequency.
+
+        Returns:
+            int | None: Sampling frequency in Hz, or None when absent or invalid
+        """
+
+        return self._numeric_attribute('sampleFrequency')
+
+    @property
+    def bits_per_sample(self) -> int | None:
+        """
+        Read the advertised audio sample depth.
+
+        Returns:
+            int | None: Bits per sample, or None when absent or invalid
+        """
+
+        return self._numeric_attribute('bitsPerSample')
+
+    def _numeric_attribute(self, name: str) -> int | None:
+        """
+        Interpret an unsigned resource attribute while retaining its original text.
+
+        Args:
+            name (str): Attribute name
+
+        Returns:
+            int | None: Parsed value, or None when absent or invalid
+        """
+
+        value = self.attributes.get(name, '').strip()
+        return int(value) if value.isascii() and value.isdecimal() else None
 
     @property
     def size(self) -> int | None:
@@ -433,6 +539,28 @@ class Recording(BaseModel):
         """
 
         return select_original_resource(self.resources, for_move=True)
+
+    def copy_count_for(self, resource: Resource) -> ProtectionValue[int]:
+        """
+        Return the copy count applicable to a particular recording resource.
+        A converted or mobile resource may have a different count from the main recording.
+
+        Args:
+            resource (Resource): Resource selected from this recording
+
+        Returns:
+            ProtectionValue[int]: Resource-specific or recording-wide count, or an omitted value
+        """
+
+        for count in self.protection.reported_copy_counts:
+            if count.resource_url == resource.url:
+                return count.remaining_copies
+        for count in self.protection.reported_copy_counts:
+            if count.resource_url is None:
+                return count.remaining_copies
+        if resource == self.original_move_resource:
+            return self.protection.remaining_copy_count
+        return ProtectionValue[int](status='omitted', source='metadata', observed_at=self.observed_at)
 
 
 class RecordingMetadata(BaseModel):

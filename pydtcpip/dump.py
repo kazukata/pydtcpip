@@ -45,6 +45,7 @@ _KEPT_DIDL_TEXTS = frozenset(
         'createClass',
         'searchClass',
         'res',
+        'EncContentURI',
     )
 )
 # DIDL-Lite attributes to retain (resource format, size, duration, and item identifiers)
@@ -65,6 +66,8 @@ _KEPT_DIDL_ATTRIBUTES = frozenset(
         'bitrate',
         'resolution',
         'framerate',
+        'recordQuality',
+        'recMode',
         'cleartextSize',
         'updateCount',
         'nrAudioChannels',
@@ -249,7 +252,7 @@ class Redactor:
             if token.strip() == '':
                 output.append(token)
             elif current in kept_texts or is_capability is True:
-                if current == 'res':
+                if current in ('res', 'EncContentURI'):
                     value = token[9:-3] if is_cdata is True else unescape(token)
                     masked = self._mask_url(value)
                     output.append(f'<![CDATA[{masked}]]>' if is_cdata is True else escape(masked, quote=False))

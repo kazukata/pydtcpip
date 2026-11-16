@@ -6,7 +6,7 @@ from xml.etree import ElementTree as ET
 from pydtcpip.dlna.description import DeviceDescription
 from pydtcpip.dlna.profiles.base import ChapterField, CopyCountField, Profile
 from pydtcpip.dlna.profiles.generic import GENERIC
-from pydtcpip.models import Recording, ResourceConversion
+from pydtcpip.models import Recording, Resource, ResourceConversion
 
 
 def _matches(description: DeviceDescription) -> bool:
@@ -38,7 +38,9 @@ def _read_resource_conversion(item: ET.Element, resource: ET.Element) -> Resourc
     """
 
     url = (resource.text or '').strip()
-    if '1' in parse_qs(urlsplit(url).query).get('CI', []):
+    if resource.tag == '{urn:schemas-panasonic-com:pxn}EncContentURI' or '1' in parse_qs(urlsplit(url).query).get(
+        'CI', []
+    ):
         return ResourceConversion(is_converted=True)
     # HD/VGA references can identify derivative resources even when their URLs have no conversion query
     for sibling in item.findall('{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}res'):
@@ -48,6 +50,20 @@ def _read_resource_conversion(item: ET.Element, resource: ET.Element) -> Resourc
             if reference is not None and reference.strip() and urljoin(url, reference.strip()) == url:
                 return ResourceConversion(is_converted=True)
     return None
+
+
+def _read_resource_details(resource: Resource) -> Resource:
+    """
+    Retain Panasonic's advertised recording-mode name.
+
+    Args:
+        resource (Resource): Resource with the original Panasonic attributes
+
+    Returns:
+        Resource: Resource carrying its device-provided mode name
+    """
+
+    return resource.model_copy(update={'recording_mode': resource.attributes.get('recMode', resource.recording_mode)})
 
 
 def _needs_listing_metadata(recording: Recording) -> bool:
@@ -88,4 +104,9 @@ PANASONIC = Profile(
     ),
     chapter_fields=(ChapterField('{urn:schemas-panasonic-com:pxn}ChapterList', 'panasonic', on_resource=True),),
     read_resource_conversion=_read_resource_conversion,
+    resource_elements=(
+        '{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}res',
+        '{urn:schemas-panasonic-com:pxn}EncContentURI',
+    ),
+    read_resource_details=_read_resource_details,
 )

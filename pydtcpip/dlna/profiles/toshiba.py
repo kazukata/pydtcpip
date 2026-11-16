@@ -5,7 +5,7 @@ from xml.etree import ElementTree as ET
 from pydtcpip.dlna.description import DeviceDescription
 from pydtcpip.dlna.profiles.base import CopyCountField, Profile
 from pydtcpip.dlna.profiles.generic import GENERIC
-from pydtcpip.models import ProtectionValue
+from pydtcpip.models import ProtectionValue, Resource
 
 
 # Namespaces for regza:copycount, which reports a recording's remaining copies
@@ -60,6 +60,24 @@ def _read_remaining_copy_count(item: ET.Element) -> ProtectionValue[int]:
     return ProtectionValue[int](status='known', value=int(value.strip()) - 1, source='metadata')
 
 
+def _read_resource_details(resource: Resource) -> Resource:
+    """
+    Read the frame rate advertised in either REGZA metadata namespace.
+
+    Args:
+        resource (Resource): Resource with its original attributes
+
+    Returns:
+        Resource: Resource carrying the reported scan rate without changing its i/p notation
+    """
+
+    for namespace in _REGZA_METADATA_NAMESPACES:
+        frame_rate = resource.attributes.get(f'{{{namespace}}}framerate')
+        if frame_rate is not None:
+            return resource.model_copy(update={'frame_rate': frame_rate})
+    return resource
+
+
 TOSHIBA = Profile(
     name='toshiba',
     parent=GENERIC,
@@ -70,4 +88,5 @@ TOSHIBA = Profile(
         for namespace in _REGZA_METADATA_NAMESPACES
     ),
     extension='toshiba',
+    read_resource_details=_read_resource_details,
 )

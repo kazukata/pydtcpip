@@ -73,6 +73,43 @@ class Profile:
     read_resource_variant: Callable[[Resource], ResourceVariant | None] | None = None
     # Decide whether an individual recording still needs its parent listing
     needs_listing_metadata: Callable[[Recording], bool] | None = None
+    # Recognized resource element names, including vendor-advertised alternatives
+    resource_elements: tuple[str, ...] | None = None
+    # Expose recorder-provided display details without changing the original attributes
+    read_resource_details: Callable[[Resource], Resource] | None = None
+
+    def resolve_resource_elements(self) -> tuple[str, ...]:
+        """
+        Resolve resource element names through the profile tree.
+
+        Returns:
+            tuple[str, ...]: Qualified element names accepted by the nearest profile
+        """
+
+        profile: Profile | None = self
+        while profile is not None:
+            if profile.resource_elements is not None:
+                return profile.resource_elements
+            profile = profile.parent
+        return ('{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}res',)
+
+    def resource_details(self, resource: Resource) -> Resource:
+        """
+        Interpret device-specific recording mode and frame-rate metadata.
+
+        Args:
+            resource (Resource): Resource with its standard attributes already interpreted
+
+        Returns:
+            Resource: Resource enriched by the nearest handler, or unchanged without one
+        """
+
+        profile: Profile | None = self
+        while profile is not None:
+            if profile.read_resource_details is not None:
+                return profile.read_resource_details(resource)
+            profile = profile.parent
+        return resource
 
     def resource_variant(self, resource: Resource) -> ResourceVariant | None:
         """
@@ -141,7 +178,9 @@ class Profile:
         observed_at = datetime.now(UTC)
         for field in self.resolve_copy_count_fields():
             elements = (
-                item.findall('{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}res') if field.on_resource else [item]
+                [child for child in item if child.tag in self.resolve_resource_elements()]
+                if field.on_resource
+                else [item]
             )
             for element in elements:
                 raw_value = element.get(field.name) if field.on_resource else element.findtext(field.name)
@@ -194,7 +233,9 @@ class Profile:
         references: list[ChapterResource] = []
         for field in profile.chapter_fields:
             elements = (
-                item.findall('{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}res') if field.on_resource else [item]
+                [child for child in item if child.tag in self.resolve_resource_elements()]
+                if field.on_resource
+                else [item]
             )
             for element in elements:
                 value = element.get(field.name) if field.on_resource else element.findtext(field.name)
