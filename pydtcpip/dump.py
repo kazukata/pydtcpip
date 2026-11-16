@@ -21,7 +21,7 @@ _REDACTED_TEXT = 'redacted'
 ## Names indicating identifiers, credentials, personal data, or dates exclude the integer exception
 _SHORT_INTEGER_PATTERN = re.compile(r'(?:0|[1-9][0-9]{0,2})')
 _SENSITIVE_NAME_PATTERN = re.compile(
-    r'id$|identifier|uuid|udn|serial|credential|password|passwd|pin|secret|token|auth|key|mac|address|owner|user|account|'
+    r'id$|identifier|uuid|udn|serial|credential|password|passwd|passphrase|pin|secret|token|auth|key|mac|address|owner|user|account|'
     r'date|time|^(?:start|end)$|title|name|description',
     re.IGNORECASE,
 )

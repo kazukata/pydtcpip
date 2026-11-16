@@ -261,7 +261,7 @@ def test_short_unknown_integers_survive_without_retaining_sensitive_fields(kind:
     assert '<!-- 123 -->' not in redacted
 
 
-@pytest.mark.parametrize('name', ['credential', 'credentials'])
+@pytest.mark.parametrize('name', ['credential', 'credentials', 'passphrase'])
 def test_short_credentials_are_redacted_in_text_attributes_and_ancestors(name: str) -> None:
     """Exclude explicitly named credentials from the diagnostic integer exception."""
 
