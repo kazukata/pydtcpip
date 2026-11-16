@@ -345,6 +345,36 @@ async def test_cli_panasonic_fetches_parent_only_for_missing_copy_count(count: s
 
 
 @pytest.mark.anyio
+async def test_cli_device_capabilities_are_separate_from_recording_permissions() -> None:
+    """Advertised device Move support must not grant Move support to a recording without DTCP flags."""
+
+    source = MetadataSource('Panasonic', 'BD/DVD Recorder', recording_xml().replace(';DTCP.COM_FLAGS=C0000000', ''))
+    description = (Path(__file__).parent / 'fixtures/panasonic/dmr-brx2060/description.xml').read_text(encoding='utf-8')
+    # Route the sanitized device description's advertised services to the local test source
+    source.response_bodies['/description.xml'] = description.replace(
+        'http://192.0.2.1:60606/Server0/CDS_control', '/control'
+    ).encode('utf-8')
+    async with source.serve() as (location, _):
+        result = await asyncio.to_thread(
+            CliRunner().invoke, app, ['info', '--server', location, '--id', 'V_42', '--basic']
+        )
+        async with DLNAClient() as client:
+            server = await client.get_server(location)
+            recording = await server.get_metadata('V_42')
+            assert isinstance(recording, Recording)
+            metadata = await server.collect_metadata(recording, additional=False)
+    assert result.exit_code == 0, result.output
+    assert 'Device capabilities' in result.output and 'dtcp-move' in result.output
+    assert 'do not establish Move permission' in result.output
+    saved = RecordingMetadata.model_validate_json(metadata.model_dump_json())
+    assert saved.recording.protection.is_move_supported.value is None
+    assert saved.recording.protection.is_move_supported.status == 'omitted'
+    assert saved.device_description_xml == description.replace('http://192.0.2.1:60606/Server0/CDS_control', '/control')
+    assert saved.device_declarations['{urn:schemas-skyperfectv-co-jp:device-1-0}X_SPTVCAP'].startswith('REC-1.00')
+    assert 'upload_dub_sink-1.0' in saved.device_declarations['{urn:schemas-jlabs-or-jp:device-1-0}X_JLABSCAP']
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ('manufacturer', 'model', 'fields', 'attributes', 'format', 'action'),
     [

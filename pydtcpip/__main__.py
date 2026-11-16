@@ -440,12 +440,13 @@ def _format_recording_copy_count(recording: Recording) -> str:
     return _format_protection(count)
 
 
-def _print_recording(recording: Recording) -> None:
+def _print_recording(recording: Recording, device_declarations: dict[str, str] | None = None) -> None:
     """
     Display recording metadata and protection information.
 
     Args:
         recording (Recording): Recording to display
+        device_declarations (dict[str, str] | None): Declarations from the UPnP device description
     """
 
     table = Table(title=recording.title, show_header=False)
@@ -482,7 +483,9 @@ def _print_recording(recording: Recording) -> None:
             field = value.name.rpartition('}')[2]
             table.add_row(f'{label} ({field})', text)
     table.add_row('Copies remaining (recording metadata)', _format_recording_copy_count(recording))
-    table.add_row('Move support (protocolInfo)', _format_protection(recording.protection.is_move_supported))
+    table.add_row(
+        'Selected resource Move support (protocolInfo)', _format_protection(recording.protection.is_move_supported)
+    )
     table.add_row('Transfer copy control', 'Available after transfer starts')
     for count in recording.protection.reported_copy_counts:
         convention = 'Final Move convention unknown'
@@ -512,6 +515,16 @@ def _print_recording(recording: Recording) -> None:
             if value is not None:
                 table.add_row(f'Resource {index}: {label}', str(value))
     console.print(table)
+    if device_declarations:
+        capabilities = {name: value for name, value in device_declarations.items() if name.endswith('CAP')}
+        if capabilities:
+            table = Table(title='Device capabilities (UPnP device description)', show_header=False)
+            table.add_column('Declaration')
+            table.add_column('Value')
+            for name, value in capabilities.items():
+                table.add_row(Text(name.rpartition('}')[2]), Text(value))
+            console.print(table)
+            console.print('These device-wide declarations do not establish Move permission for this recording.')
 
 
 def _print_additional_metadata(metadata: RecordingMetadata) -> None:
@@ -814,7 +827,7 @@ def info(
                 if media_server.profile.is_unverified is True:
                     profile_label += ' (device behavior unverified)'
                 console.print(f'Profile: {profile_label}')
-                _print_recording(recording)
+                _print_recording(recording, metadata.device_declarations)
                 _print_additional_metadata(metadata)
 
     _execute(main())
@@ -944,7 +957,7 @@ def move(
             # Show the recording and copy count with its acquisition status before asking for confirmation
             remaining = None
             if recording is not None:
-                _print_recording(recording)
+                _print_recording(recording, media_server.description.extensions if media_server is not None else None)
                 remaining = recording.protection.remaining_copy_count
             else:
                 console.print(
