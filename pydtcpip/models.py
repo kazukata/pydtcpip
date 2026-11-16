@@ -216,25 +216,19 @@ class ProtocolInfo(BaseModel):
 
 
 class ResourceConversion(BaseModel):
-    """Evidence identifying a resource as stored content or a converted representation."""
+    """Conversion status used when selecting the stored recording format."""
 
     model_config = ConfigDict(frozen=True)
 
     is_converted: bool
-    source: Literal['protocol_info', 'metadata', 'resource_url']
-    field_name: str
-    raw_value: str
 
 
 class ResourceVariant(BaseModel):
-    """Family-specific evidence distinguishing the main recording from its mobile version."""
+    """Recording version and transfer restrictions used when selecting a resource."""
 
     model_config = ConfigDict(frozen=True)
 
     kind: Literal['main', 'mobile']
-    source: Literal['protocol_info', 'resource_url']
-    field_name: str
-    raw_value: str
     is_move_only: bool = False
 
 

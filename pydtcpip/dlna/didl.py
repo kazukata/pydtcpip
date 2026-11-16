@@ -186,12 +186,7 @@ def _parse_resource(element: ET.Element, item: ET.Element, profile: Profile) -> 
     conversion = (
         profile.resource_conversion(item, element)
         if protocol_info.is_converted is None
-        else ResourceConversion(
-            is_converted=protocol_info.is_converted,
-            source='protocol_info',
-            field_name='DLNA.ORG_CI',
-            raw_value=protocol_info.parameters['DLNA.ORG_CI'],
-        )
+        else ResourceConversion(is_converted=protocol_info.is_converted)
     )
     resource = Resource(
         url=(element.text or '').strip(),

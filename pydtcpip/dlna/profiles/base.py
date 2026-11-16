@@ -82,7 +82,7 @@ class Profile:
             resource (Resource): Resource with its original protocol and conversion information
 
         Returns:
-            ResourceVariant | None: Evidence from the nearest handler, or None when unclassified
+            ResourceVariant | None: Recording version from the nearest handler, or None when unclassified
         """
 
         profile: Profile | None = self
@@ -101,7 +101,7 @@ class Profile:
             resource (ET.Element): Resource whose standard conversion flag is absent
 
         Returns:
-            ResourceConversion | None: Evidence from the nearest profile handler, or None when unknown
+            ResourceConversion | None: Conversion status from the nearest profile handler, or None when unknown
         """
 
         profile: Profile | None = self

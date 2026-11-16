@@ -114,7 +114,7 @@ def test_original_resource_controls_count_and_move_capabilities() -> None:
 
 @pytest.mark.parametrize('profile_name', ['panasonic', 'generic'])
 @pytest.mark.parametrize('is_reversed', [False, True])
-def test_panasonic_conversion_evidence_survives_resource_order_and_serialization(
+def test_panasonic_conversion_status_survives_resource_order_and_serialization(
     profile_name: str, is_reversed: bool
 ) -> None:
     """Preserve the CI omission and HD/VGA references reported in Issue #11."""
@@ -158,10 +158,7 @@ def test_panasonic_conversion_evidence_survives_resource_order_and_serialization
         hd = by_url['http://192.0.2.1/AV-1_BDY?CI=1&fmt=AVC_TS_MP_HD_AAC_LTP_T']
         vga = by_url['http://192.0.2.1/AV-1_VGA']
         assert hd.is_converted is True and hd.conversion is not None
-        assert hd.conversion.source == 'resource_url'
-        assert hd.conversion.raw_value == '1'
         assert vga.is_converted is True and vga.conversion is not None
-        assert vga.conversion.field_name == '{urn:schemas-panasonic-com:pxn}VgaContentUri'
     else:
         assert all(resource.conversion is None for resource in saved.resources)
         assert saved.original_resource == saved.resources[0]

@@ -34,21 +34,19 @@ def _read_resource_conversion(item: ET.Element, resource: ET.Element) -> Resourc
         resource (ET.Element): Resource to classify
 
     Returns:
-        ResourceConversion | None: Conversion evidence, or None when the format remains unknown
+        ResourceConversion | None: Conversion status, or None when the format remains unknown
     """
 
     url = (resource.text or '').strip()
     if '1' in parse_qs(urlsplit(url).query).get('CI', []):
-        return ResourceConversion(is_converted=True, source='resource_url', field_name='CI', raw_value='1')
+        return ResourceConversion(is_converted=True)
     # HD/VGA references can identify derivative resources even when their URLs have no conversion query
     for sibling in item.findall('{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}res'):
         for name in ('HDContentUri', 'VgaContentUri'):
             field_name = f'{{urn:schemas-panasonic-com:pxn}}{name}'
             reference = sibling.get(field_name)
             if reference is not None and reference.strip() and urljoin(url, reference.strip()) == url:
-                return ResourceConversion(
-                    is_converted=True, source='metadata', field_name=field_name, raw_value=reference
-                )
+                return ResourceConversion(is_converted=True)
     return None
 
 

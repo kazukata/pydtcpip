@@ -59,7 +59,7 @@ pydtcpip is a foundation library for recovering broadcast recordings from aging 
 
 Transfers select the main recording in its stored quality, using `DLNA.ORG_CI` and family-specific metadata to distinguish it from converted and mobile versions. An AVC or nasne three-times recording is transferred in that recorded format; original quality does not require DR mode. Dedicated Move URLs are preferred for dubbing and excluded from automatic streaming selection.
 
-`info` displays the default streaming and Move resources and the evidence used to classify their quality. If the device supplies insufficient information, the CLI warns that the selected resource's quality is unknown. To select a converted or mobile version explicitly, pass its resource URL to `stream` or `move --url`.
+`info` displays the default streaming and Move resources and distinguishes the main recording from converted or mobile versions. If the device supplies insufficient information, the CLI warns that the selected resource's quality is unknown. To select a converted or mobile version explicitly, pass its resource URL to `stream` or `move --url`.
 
 ## Supported devices
 
@@ -92,7 +92,7 @@ Profiles marked as unverified in the CLI still require hardware validation of th
 
 | Family | Profile | Metadata support |
 | --- | --- | --- |
-| Panasonic DIGA / VIERA | `panasonic` | Resource copy counts, chapter URLs, Panasonic extension fields and conversion evidence from resource URLs and HD/VGA references |
+| Panasonic DIGA / VIERA | `panasonic` | Resource copy counts, chapter URLs, Panasonic extension fields and detection of converted resources using URLs and HD/VGA references |
 | Sony BDZ | `sony_bdz` | Copy counts, chapter URLs, recording details, actual recording start and storage information from advertised services |
 | Sharp AQUOS | `sharp` | Copy counts, chapter URLs and Sharp extension fields |
 | I-O DATA REC-ON | `recon` | Resource copy counts and chapters through an advertised tag action |
@@ -106,7 +106,7 @@ Profiles marked as unverified in the CLI still require hardware validation of th
 Existing Toshiba profiles also support hexadecimal copy counts and optional chapter queries. The nasne profile additionally supports recording details and chapter positions.  
 These new queries remain unverified on hardware, including devices with previously verified basic operations. nasne chapter times are estimates derived from thumbnail positions; the original positions are retained, including points that cannot be converted to a time.
 
-For Panasonic, individual recording metadata is used directly when it includes the selected resource's copy count; otherwise the CLI checks the parent listing, accommodating both behaviors reported in [#6](https://github.com/tsukumijima/pydtcpip/issues/6) and [#11](https://github.com/tsukumijima/pydtcpip/issues/11). Device-wide capability declarations are displayed separately from the recording's Move support. The JSON metadata sidecar retains these declarations, resource conversion evidence, and separate HEAD and GET response metadata. Media HTTP errors expose the recorder's `error-info` and `Error.pxn.panasonic.com` diagnostic fields when present.
+For Panasonic, individual recording metadata is used directly when it includes the selected resource's copy count; otherwise the CLI checks the parent listing, accommodating both behaviors reported in [#6](https://github.com/tsukumijima/pydtcpip/issues/6) and [#11](https://github.com/tsukumijima/pydtcpip/issues/11). Device-wide capability declarations are displayed separately from the recording's Move support. The JSON metadata sidecar retains these declarations and separate HEAD and GET response metadata. Media HTTP errors expose the recorder's `error-info` and `Error.pxn.panasonic.com` diagnostic fields when present.
 
 > [!IMPORTANT]  
 > **DTCP-IP itself is a standard that defines mutual authentication and encrypted transfer, while recording listings and protection information are exchanged through DLNA / UPnP at the preceding stage.**  
@@ -476,7 +476,7 @@ However, whether subtitles and data broadcasts are included or only video and au
 > DIDL-Lite stores broadcast metadata such as program titles, detailed descriptions, broadcast dates and times, channel names, genres, and remaining copy counts, and also includes manufacturer- and model-specific extension elements.  
 > **Keep `.m2ts`, `.xml` and `.metadata.json` together when archiving so that programs can be identified later, including information absent from the TS.**
 
-The XML retains the established DIDL-Lite item format, with ARIB broadcast symbols converted to readable Unicode. The JSON contains parsed fields alongside the source XML values before that conversion, resource attributes, original/mobile quality evidence, raw copy counts, their interpretation and observation times.  
+The XML retains the established DIDL-Lite item format, with ARIB broadcast symbols converted to readable Unicode. The JSON contains parsed fields alongside the source XML values before that conversion, resource attributes, raw copy counts, their interpretation and observation times.  
 For client-initiated Move, it also includes the device description, service descriptions used by optional queries, chapters and additional responses. The source item XML is reserialized, so namespace prefixes and whitespace can differ from the response; incoming transfers additionally preserve the sender's complete `CreateObject` XML unchanged.
 The JSON's `responses` field retains complete HTTP and SOAP response bodies, headers, status codes and observation times even when their metadata format cannot be parsed.
 

@@ -56,7 +56,7 @@ def test_nasne_keeps_the_recorded_quality_and_separates_move_urls(
     assert mobile.is_original_quality is False
     assert mobile.protocol_info.is_converted == (False if conversion else None)
     assert mobile.variant is not None
-    assert mobile.variant.raw_value == 'mobile'
+    assert mobile.variant.kind == 'mobile'
 
 
 @pytest.mark.parametrize('original_profile', ['DTCP_MPEG_TS_JP_T', 'DTCP_AVC_TS_JP_AAC_T'])
@@ -125,7 +125,7 @@ def test_converted_mpeg_resource_cannot_replace_a_stored_avc_recording() -> None
 @pytest.mark.anyio
 @pytest.mark.parametrize('model', ['nasne', 'BDZ-TEST'])
 @pytest.mark.parametrize('operation', ['stream', 'move'])
-async def test_cli_transfers_the_main_recording_and_preserves_selection_evidence(
+async def test_cli_transfers_the_main_recording_and_preserves_resource_selection(
     authority: FakeAuthority,
     sink_device: FakeDevice,
     source_device: FakeDevice,

@@ -59,7 +59,7 @@ def _read_resource_variant(resource: Resource) -> ResourceVariant | None:
         resource (Resource): Resource with the recorder's advertised URL
 
     Returns:
-        ResourceVariant | None: URL evidence, or None for an unrecognized quality value
+        ResourceVariant | None: Recording version and transfer use, or None for an unrecognized quality value
     """
 
     parameters = parse_qs(urlsplit(resource.url).query, keep_blank_values=True)
@@ -68,9 +68,6 @@ def _read_resource_variant(resource: Resource) -> ResourceVariant | None:
         return None
     return ResourceVariant(
         kind='mobile' if quality == 'mobile' else 'main',
-        source='resource_url',
-        field_name='quality',
-        raw_value=quality,
         is_move_only='cp' in parameters,
     )
 

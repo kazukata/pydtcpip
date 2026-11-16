@@ -519,19 +519,8 @@ def _print_recording(recording: Recording, device_declarations: dict[str, str] |
             uses.append('Move')
         if uses:
             table.add_row(f'Resource {index}: Default selection', ', '.join(uses))
-        if resource.variant is not None:
-            variant = resource.variant
-            table.add_row(
-                f'Resource {index}: Recording version',
-                Text(f'{variant.kind} ({variant.source}: {variant.field_name}={variant.raw_value})'),
-            )
-            if variant.is_move_only is True:
-                table.add_row(f'Resource {index}: Transfer use', 'Move only')
-        if resource.conversion is not None:
-            table.add_row(
-                f'Resource {index}: Format evidence',
-                Text(f'{resource.conversion.source}: {resource.conversion.field_name}={resource.conversion.raw_value}'),
-            )
+        if resource.variant is not None and resource.variant.is_move_only is True:
+            table.add_row(f'Resource {index}: Transfer use', 'Move only')
         for label, value in (
             ('Duration', resource.duration),
             ('Resolution', resource.resolution),

@@ -30,7 +30,7 @@ def _read_resource_variant(resource: Resource) -> ResourceVariant | None:
         resource (Resource): Resource with standard and Sony media profile declarations
 
     Returns:
-        ResourceVariant | None: Media profile evidence, or None for an unclassified format
+        ResourceVariant | None: Recording version, or None for an unclassified format
     """
 
     for field in ('SONY.COM_PN', 'DLNA.ORG_PN'):
@@ -39,9 +39,9 @@ def _read_resource_variant(resource: Resource) -> ResourceVariant | None:
             continue
         name = value.upper().removeprefix('DTCP_')
         if name in ('AVC_TS_SD_30_JP_AAC_T', 'AVC_TS_BP_360P_30_AAC_T', 'AVC_TS_BP_180P_30_AAC_T'):
-            return ResourceVariant(kind='mobile', source='protocol_info', field_name=field, raw_value=value)
+            return ResourceVariant(kind='mobile')
         if name in ('MPEG_TS_JP_T', 'AVC_TS_JP_AAC_T'):
-            return ResourceVariant(kind='main', source='protocol_info', field_name=field, raw_value=value)
+            return ResourceVariant(kind='main')
     return None
 
 
