@@ -61,25 +61,35 @@ When a recording device serves both the stored format (`DLNA.ORG_CI=0`) and a co
 
 ## Supported devices
 
-| Model | Discovery / recording listings | Move | Push dubbing reception | Streaming |
-| --- | --- | --- | --- | --- |
-| Toshiba REGZA 43Z570L | Verified | Verified | Verified | Verified |
-| Toshiba DBR-Z620 | Verified | Verified | Verified | Verified |
-| Sony nasne CECH-ZNR1J | [Reported working](https://github.com/tsukumijima/pydtcpip/issues/3) | Unverified | Unverified | Unverified |
-| Buffalo nasne NS-N100 | [Reported working with the nasne profile](https://github.com/tsukumijima/pydtcpip/issues/4) | Unverified | Unverified | Unverified |
+**The table distinguishes discovery and metadata retrieval from successful media transfers.**  
+“Verified” denotes maintainer testing; “Reported” denotes community testing linked from the model name. “Unverified” means that no successful test of that operation has been recorded, rather than that the device is incompatible.
+
+| Model / report | Discovery | Recording listings | Streaming (non-Move) | Move | Push dubbing reception |
+| --- | --- | --- | --- | --- | --- |
+| Toshiba REGZA 43Z570L | Verified | Verified | Verified | Verified | Verified |
+| Toshiba DBR-Z620 | Verified | Verified | Verified | Verified | Verified |
+| [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
+| [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
+| [Sony BDZ-ZW1500](https://github.com/tsukumijima/pydtcpip/issues/2) | Reported | Reported | Reported (10 seconds) | Unverified | Unverified |
+| [Sony nasne CECH-ZNR1J](https://github.com/tsukumijima/pydtcpip/issues/3) | Reported | Reported | Unverified | Unverified | Unverified |
+| [Buffalo nasne NS-N100](https://github.com/tsukumijima/pydtcpip/issues/4) | Reported (see below) | Reported | Unverified | Unverified | Unverified |
+| [Sharp AQUOS BD-W2700](https://github.com/tsukumijima/pydtcpip/issues/1) | Reported (see below) | Reported | Unverified | Unverified | Unverified |
+| [Panasonic DMR-BXT3000](https://github.com/tsukumijima/pydtcpip/issues/7) | Reported | Reported | Unverified | Unverified | Unverified |
+| [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
+
+The Panasonic streaming report covers authentication, decryption and saving a complete recording from each of the two models through external scripts calling the library API. Both files matched the advertised cleartext size, and the source recordings and raw copy counts remained unchanged. These were non-Move transfers; the report does not verify the complete CLI workflow or the newly added Panasonic profile. Media decoding completed with warnings whose cause remains unresolved, and a separate large transfer was interrupted for an unknown reason. See [#11](https://github.com/tsukumijima/pydtcpip/issues/11) for the tested revision and limitations.
+
+The Sharp and Buffalo reports used `--interface` to select a valid Windows LAN address after discovery encountered stale addresses. The discovery fix in [#5](https://github.com/tsukumijima/pydtcpip/pull/5) is now merged; confirmation from those reporters is still pending. Buffalo nasne also sometimes stopped responding to discovery; connecting with `--server` remained possible. Sony and Buffalo nasne share the `nasne` profile, which now includes the Buffalo model-name match described in [#4](https://github.com/tsukumijima/pydtcpip/issues/4).
 
 Details of the implemented specification scope and design principles are summarized in [Implemented specifications and design principles](#implemented-specifications-and-design-principles) later in this document.
 
-> [!NOTE]  
-> Sony and Buffalo nasne share the `nasne` device profile. Community reports confirm recording listings and metadata retrieval on both generations; authentication, streaming, and Move remain unverified.
-
-**Additional device profiles provide metadata parsing and optional recording-detail queries for the following families. Their device behavior remains unverified.**  
-Discovery and recording details display these profiles as unverified; the table above records actual transfer verification separately.
+**Family profiles provide the metadata support listed below; transfer results are recorded separately in the table above.**  
+Profiles marked as unverified in the CLI still require hardware validation of their family-specific parsing and optional queries. A successful basic transfer on a model does not verify every feature of its profile.
 
 | Family | Profile | Metadata support |
 | --- | --- | --- |
 | Sony BDZ | `sony_bdz` | Copy counts, chapter URLs, recording details, actual recording start and storage information from advertised services |
-| Panasonic DIGA / VIERA | `panasonic` | Resource copy counts, chapter URLs and Panasonic extension fields |
+| Panasonic DIGA / VIERA | `panasonic` | Resource copy counts, chapter URLs, Panasonic extension fields and conversion evidence from resource URLs and HD/VGA references |
 | Sharp AQUOS | `sharp` | Copy counts, chapter URLs and Sharp extension fields |
 | I-O DATA REC-ON | `recon` | Resource copy counts and chapters through an advertised tag action |
 | I-O DATA RECBOX | `recbox` | Recorder-specific copy-count fields and chapter references retained by the server |
@@ -91,6 +101,8 @@ Discovery and recording details display these profiles as unverified; the table 
 
 Existing Toshiba profiles also support hexadecimal copy counts and optional chapter queries. The nasne profile additionally supports recording details and chapter positions.  
 These new queries remain unverified on hardware, including devices with previously verified basic operations. nasne chapter times are estimates derived from thumbnail positions; the original positions are retained, including points that cannot be converted to a time.
+
+For Panasonic, individual recording metadata is used directly when it includes the selected resource's copy count; otherwise the CLI checks the parent listing, accommodating both behaviors reported in [#6](https://github.com/tsukumijima/pydtcpip/issues/6) and [#11](https://github.com/tsukumijima/pydtcpip/issues/11). Device-wide capability declarations are displayed separately from the recording's Move support. The JSON metadata sidecar retains these declarations, resource conversion evidence, and separate HEAD and GET response metadata. Media HTTP errors expose the recorder's `error-info` and `Error.pxn.panasonic.com` diagnostic fields when present.
 
 > [!IMPORTANT]  
 > **DTCP-IP itself is a standard that defines mutual authentication and encrypted transfer, while recording listings and protection information are exchanged through DLNA / UPnP at the preceding stage.**  
