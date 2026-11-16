@@ -1233,6 +1233,26 @@ class PyDTCPIPApp(App[None]):
         location = self._runner.store.data_dir / 'credentials.env'
         return f'Place credentials in {location}, or set PYDTCPIP_CERTIFICATE and PYDTCPIP_PRIVATE_KEY.'
 
+    def _is_count_stale(self, key: RecordingKey, recording: Recording) -> bool:
+        """
+        Return whether a Move completed after a recording was listed, so its listed copy count no longer applies.
+
+        Args:
+            key (RecordingKey): Device UDN and recording identifier
+            recording (Recording): Listed recording
+
+        Returns:
+            bool: True when the listed copy count predates a completed Move of the recording
+        """
+
+        # The source can report the pre-Move count for some time, so a count is trusted only once a re-query saw it
+        ## change, and only when listed after that
+        moved = [item for item in self._queue if item.key == key and item.completed_at is not None]
+        if not moved:
+            return False
+        confirmed_at = moved[-1].copies_confirmed_at
+        return confirmed_at is None or recording.observed_at is None or recording.observed_at < confirmed_at
+
     def _confirm_entries(self, selections: list[Selection], directory: Path) -> list[ConfirmEntry]:
         """
         Build confirmation entries with warnings, destinations and exclusions.
@@ -1255,13 +1275,6 @@ class PyDTCPIPApp(App[None]):
                 blocked[item.key] = 'previous Move needs resumption or checking'
             elif item.status == 'waiting' or item.is_active is True:
                 blocked[item.key] = 'already queued'
-        # The source can report the pre-Move count for some time, so a count is trusted only once a re-query saw it
-        ## change, and only when listed after that
-        moved: dict[RecordingKey, datetime | None] = {
-            item.key: item.copies_confirmed_at
-            for item in self._queue
-            if item.key is not None and item.completed_at is not None
-        }
         outputs: set[Path] = set()
         entries: list[ConfirmEntry] = []
         for selection in selections:
@@ -1271,12 +1284,7 @@ class PyDTCPIPApp(App[None]):
             # Short labels appear in the table and each explanation once below it, so many recordings still fit
             warnings: list[tuple[str, str, str]] = []
             count = display.copy_count(recording, resource)
-            key = (selection.udn, recording.reference_id or recording.id)
-            # A Move completed after this listing consumed a copy, so the listed count no longer applies
-            confirmed_at = moved.get(key)
-            is_stale = key in moved and (
-                confirmed_at is None or recording.observed_at is None or recording.observed_at < confirmed_at
-            )
+            is_stale = self._is_count_stale((selection.udn, recording.reference_id or recording.id), recording)
             if is_stale is True:
                 count = ProtectionValue[int](status='not_observed', source='metadata')
             if count.status == 'known' and count.value == 0:
@@ -1516,6 +1524,9 @@ class PyDTCPIPApp(App[None]):
         metadata, sidecar = await collect_move_metadata(server, item.recording, item.output)
         self._metadata[(item.key[0], item.recording.id)] = metadata
         item.copies_before = item.recording.copy_count_for(item.resource)
+        if self._is_count_stale(item.key, item.recording) is True:
+            # The listing predates an earlier Move of this recording, so its count cannot show this Move's change
+            item.copies_before = ProtectionValue[int](status='not_observed', source='metadata')
         item.status = 'authenticating'
         return await run_move(
             client, item.resource, item.output, media_server=server, sidecar=sidecar, on_event=on_event
