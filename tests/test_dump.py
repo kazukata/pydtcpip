@@ -1,8 +1,9 @@
 """Verify that redacted dumps do not retain identifiers or program content."""
 
 import re
+from html import escape
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -192,6 +193,40 @@ def test_nasne_object_id_preserves_shared_resource_query_values() -> None:
         redactor.redact_xml('<item refID="0/video/all/pvr?id=1234567890123456789&amp;group=1"/>', 'didl')
     )
     assert reference.get('refID') == item.get('id')
+
+
+@pytest.mark.parametrize('is_reference_first', [False, True])
+@pytest.mark.parametrize('reference_location', ['query', 'path'])
+def test_query_bearing_object_ids_match_complete_url_references(
+    is_reference_first: bool, reference_location: str
+) -> None:
+    """Keep complete object references consistent regardless of document order or URL encoding."""
+
+    object_id = '0/video/all/pvr?id=1234567890123456789&group=1'
+    encoded_id = quote(object_id, safe='')
+    reference_url = (
+        f'http://198.51.100.20/media?object={encoded_id}'
+        if reference_location == 'query'
+        else f'http://198.51.100.20/media/{encoded_id}'
+    )
+    documents = [f'<item id="{escape(object_id)}"/>', f'<res importUri="{reference_url}">{reference_url}</res>']
+    if is_reference_first is True:
+        documents.reverse()
+    redactor = Redactor()
+    masked: dict[str, ET.Element] = {}
+    for document in documents:
+        element = ET.fromstring(redactor.redact_xml(document, 'didl'))
+        masked[element.tag] = element
+    item, resource = masked['item'], masked['res']
+    assert item.get('id') != object_id
+    for url in (resource.text or '', resource.attrib['importUri']):
+        parts = urlsplit(url)
+        referenced_id = (
+            parse_qs(parts.query)['object'][0]
+            if reference_location == 'query'
+            else unquote(parts.path.rsplit('/', 1)[1])
+        )
+        assert referenced_id == item.get('id')
 
 
 def test_headers_keep_only_known_values() -> None:

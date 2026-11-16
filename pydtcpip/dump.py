@@ -6,7 +6,7 @@ from collections.abc import Callable
 from html import escape, unescape
 from pathlib import Path
 from typing import Literal
-from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 
 import aiohttp
 from pydantic import BaseModel, ConfigDict
@@ -316,8 +316,7 @@ class Redactor:
             )
         elif local_name in ('id', 'parentID', 'refID'):
             original = unescape(attribute.group('value'))
-            # Some object IDs contain the same query key as their media resource URLs
-            value = escape(self._mask_url(original) if '?' in original else self._mask_object_id(original), quote=True)
+            value = escape(self._mask_object_id(original), quote=True)
         elif local_name == 'importUri':
             value = escape(self._mask_url(unescape(attribute.group('value'))), quote=True)
         else:
@@ -354,7 +353,10 @@ class Redactor:
 
         stripped = text.strip()
         parts = urlsplit(stripped)
-        segments = [self._mask_object_id(unquote(segment)) if segment else '' for segment in parts.path.split('/')]
+        segments = [
+            quote(self._mask_object_id(unquote(segment)), safe='') if segment else ''
+            for segment in parts.path.split('/')
+        ]
         query = urlencode(
             [
                 (self._mask_identifiers(name), self._mask_object_id(value))
@@ -368,7 +370,7 @@ class Redactor:
 
     def _mask_object_id(self, value: str) -> str:
         """
-        Replace an opaque identifier while retaining the standard root and no-parent values.
+        Replace an identifier while retaining query structure and the standard root and no-parent values.
 
         Args:
             value (str): Decoded object ID, URL path segment, or query value
@@ -379,7 +381,8 @@ class Redactor:
 
         if value in ('0', '-1'):
             return value
-        return self._replace('object', value, lambda n: f'object-{n}')
+        # Query-bearing IDs share both their full replacement and their component aliases with resource URLs
+        return self._replace('object', value, lambda n: self._mask_url(value) if '?' in value else f'object-{n}')
 
     def _mask_identifiers(self, text: str) -> str:
         """
