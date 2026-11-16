@@ -812,6 +812,10 @@ async def test_editing_the_destination_updates_the_move_button(tmp_path: Path) -
             field.value = '~pydtcpip-no-such-user'
             await pilot.pause(0.2)
             assert (app.is_running, move.disabled) == (True, True)
+            # An empty destination would silently refer to the current directory
+            field.value = '  '
+            await pilot.pause(0.2)
+            assert move.disabled is True
             field.value = str(empty)
             await pilot.pause(0.2)
             assert move.disabled is False

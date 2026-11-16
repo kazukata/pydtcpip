@@ -41,9 +41,12 @@ def _expand_directory(value: str) -> Path | None:
         value (str): Directory text, possibly starting with ~ or ~user
 
     Returns:
-        Path | None: Expanded directory, or None when the home directory of ~user cannot be determined
+        Path | None: Expanded directory, or None when it is empty or the home directory of ~user cannot be determined
     """
 
+    # An empty path would silently refer to the current directory
+    if value.strip() == '':
+        return None
     try:
         return Path(value).expanduser()
     except RuntimeError:
@@ -197,7 +200,7 @@ class ConfirmMoveScreen(ModalScreen[Path | None]):
         # Recompute destinations and exclusions while typing so the Move button reflects the new directory
         directory = _expand_directory(event.value)
         if directory is None:
-            # A partially typed ~user cannot be expanded yet
+            # The directory is empty or a partially typed ~user cannot be expanded yet
             self.query_one('#confirm-move', Button).disabled = True
             return
         self._refresh(directory)
@@ -209,10 +212,15 @@ class ConfirmMoveScreen(ModalScreen[Path | None]):
         value = self.query_one('#confirm-directory', Input).value
         directory = _expand_directory(value)
         if directory is None:
-            self.notify(f'Could not resolve the home directory in {value}', severity='error')
+            message = (
+                'Enter a destination directory'
+                if value.strip() == ''
+                else f'Could not resolve the home directory in {value}'
+            )
+            self.notify(message, severity='error', markup=False)
             return
         if directory.is_dir() is False:
-            self.notify(f'Destination directory not found: {directory}', severity='error')
+            self.notify(f'Destination directory not found: {directory}', severity='error', markup=False)
             return
         self.dismiss(directory)
 
