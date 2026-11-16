@@ -64,18 +64,20 @@ When a recording device serves both the stored format (`DLNA.ORG_CI=0`) and a co
 **The table distinguishes discovery and metadata retrieval from successful media transfers.**  
 “Verified” denotes maintainer testing; “Reported” denotes community testing linked from the model name. “Unverified” means that no successful test of that operation has been recorded, rather than that the device is incompatible.
 
+Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panasonic, Sony, and Sharp, with older models first within each group; Sony and Buffalo nasne models are grouped together as one series.
+
 | Model / report | Discovery | Recording listings | Streaming (non-Move) | Move | Push dubbing reception |
 | --- | --- | --- | --- | --- | --- |
+| [Sony nasne CECH-ZNR1J](https://github.com/tsukumijima/pydtcpip/issues/3) | Reported | Reported | Unverified | Unverified | Unverified |
+| [Buffalo nasne NS-N100](https://github.com/tsukumijima/pydtcpip/issues/4) | Reported (see below) | Reported | Unverified | Unverified | Unverified |
 | Toshiba REGZA 43Z570L | Verified | Verified | Verified | Verified | Verified |
+| [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
 | Toshiba DBR-Z620 | Verified | Verified | Verified | Verified | Verified |
+| [Panasonic DMR-BXT3000](https://github.com/tsukumijima/pydtcpip/issues/7) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
 | [Sony BDZ-ZW1500](https://github.com/tsukumijima/pydtcpip/issues/2) | Reported | Reported | Reported (10 seconds) | Unverified | Unverified |
-| [Sony nasne CECH-ZNR1J](https://github.com/tsukumijima/pydtcpip/issues/3) | Reported | Reported | Unverified | Unverified | Unverified |
-| [Buffalo nasne NS-N100](https://github.com/tsukumijima/pydtcpip/issues/4) | Reported (see below) | Reported | Unverified | Unverified | Unverified |
 | [Sharp AQUOS BD-W2700](https://github.com/tsukumijima/pydtcpip/issues/1) | Reported (see below) | Reported | Unverified | Unverified | Unverified |
-| [Panasonic DMR-BXT3000](https://github.com/tsukumijima/pydtcpip/issues/7) | Reported | Reported | Unverified | Unverified | Unverified |
-| [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
 
 The Panasonic streaming report covers authentication, decryption and saving a complete recording from each of the two models through external scripts calling the library API. Both files matched the advertised cleartext size, and the source recordings and raw copy counts remained unchanged. These were non-Move transfers; the report does not verify the complete CLI workflow or the newly added Panasonic profile. Media decoding completed with warnings whose cause remains unresolved, and a separate large transfer was interrupted for an unknown reason. See [#11](https://github.com/tsukumijima/pydtcpip/issues/11) for the tested revision and limitations.
 
@@ -88,8 +90,8 @@ Profiles marked as unverified in the CLI still require hardware validation of th
 
 | Family | Profile | Metadata support |
 | --- | --- | --- |
-| Sony BDZ | `sony_bdz` | Copy counts, chapter URLs, recording details, actual recording start and storage information from advertised services |
 | Panasonic DIGA / VIERA | `panasonic` | Resource copy counts, chapter URLs, Panasonic extension fields and conversion evidence from resource URLs and HD/VGA references |
+| Sony BDZ | `sony_bdz` | Copy counts, chapter URLs, recording details, actual recording start and storage information from advertised services |
 | Sharp AQUOS | `sharp` | Copy counts, chapter URLs and Sharp extension fields |
 | I-O DATA REC-ON | `recon` | Resource copy counts and chapters through an advertised tag action |
 | I-O DATA RECBOX | `recbox` | Recorder-specific copy-count fields and chapter references retained by the server |
