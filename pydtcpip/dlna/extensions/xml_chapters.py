@@ -1,5 +1,6 @@
 """Chapter documents advertised through metadata URLs and ContentDirectory actions."""
 
+import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Literal
@@ -8,7 +9,7 @@ from xml.etree import ElementTree as ET
 from pydtcpip.dlna.extensions.base import MetadataExtension
 from pydtcpip.dlna.extensions.sony import SonyExtension
 from pydtcpip.errors import DLNAError
-from pydtcpip.models import Chapter, ChapterList, MetadataQuery, Recording
+from pydtcpip.models import Chapter, ChapterList, Container, MetadataQuery, Recording
 
 
 type ChapterFormat = Literal['sony', 'panasonic', 'sharp', 'toshiba', 'shared_tags']
@@ -123,10 +124,41 @@ class SOAPChapterExtension(MetadataExtension):
 
 
 class ToshibaExtension(SOAPChapterExtension):
-    """Toshiba's optional chapter-list action."""
+    """Toshiba's chapter-list action and USB drive names from recording folders."""
 
     action = 'X_Toshiba_GetChapterList'
     format: ChapterFormat = 'toshiba'
+
+    async def get_details(self, recording: Recording) -> tuple[MetadataQuery, ...]:
+        """
+        Read a USB drive name from the recording's parent folders.
+
+        Args:
+            recording (Recording): Recording whose folder hierarchy identifies its USB drive
+
+        Returns:
+            tuple[MetadataQuery, ...]: Storage name and source folder, or an omitted result
+        """
+
+        parent_id = recording.parent_id
+        visited = {'0', '-1', ''}
+        while parent_id not in visited:
+            visited.add(parent_id)
+            parent = await self.server.get_metadata(parent_id)
+            if isinstance(parent, Container) is False:
+                break
+            # REGZA Blu-ray recorders advertise USB folders as USB1:<drive name>
+            match = re.fullmatch(r'(?:usb|ｕｓｂ)[0-9０-９]+[:：](.+)', parent.title, flags=re.IGNORECASE)
+            if match is not None:
+                return (
+                    MetadataQuery(
+                        name='storage',
+                        status='known',
+                        data={'name': match[1], 'container_id': parent.id, 'container_title': parent.title},
+                    ),
+                )
+            parent_id = parent.parent_id
+        return (MetadataQuery(name='storage', status='omitted'),)
 
 
 class SharedTagsExtension(SOAPChapterExtension):

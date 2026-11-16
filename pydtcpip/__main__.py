@@ -570,7 +570,7 @@ def _print_additional_metadata(metadata: RecordingMetadata) -> None:
             table.add_column('Value')
             # Show selected recording fields; complete response documents remain in the JSON archive
             selected = query.data.get('recording')
-            items = [selected] if isinstance(selected, dict) else query.data.get('items', [])
+            items = [selected] if isinstance(selected, dict) else query.data.get('items', [query.data])
             if isinstance(items, list):
                 for item in items:
                     if not isinstance(item, dict):

@@ -226,6 +226,7 @@ class MetadataSource:
         self.requery_didl: str | None = None
         self.requery_ready: asyncio.Event | None = None
         self.metadata_didl: str | None = None
+        self.metadata_by_id: dict[str, str] = {}
         self.response_bodies: dict[str, bytes] = {}
 
     async def handle(self, request: web.Request) -> web.Response:
@@ -285,6 +286,8 @@ class MetadataSource:
             result = self.didl
             if self.metadata_didl is not None and arguments['BrowseFlag'] == 'BrowseMetadata':
                 result = self.metadata_didl
+            if arguments['BrowseFlag'] == 'BrowseMetadata' and arguments['ObjectID'] in self.metadata_by_id:
+                result = self.metadata_by_id[arguments['ObjectID']]
             if self.requery_didl is not None and self.requery_ready is not None:
                 if self.requery_ready.is_set():
                     result = self.requery_didl
@@ -841,6 +844,50 @@ async def test_cli_resume_continues_without_readable_metadata(
     assert resume_path.exists() is False
     assert read_bytes(sidecar_path) == b'{"recording":'
     assert 'Could not load recording metadata' in caplog.text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('folder_title', ['USB1:Archive drive', 'ｕｓｂ２：Archive drive', 'All recordings'])
+async def test_regza_storage_name_reaches_details_and_sidecar(tmp_path: Path, folder_title: str) -> None:
+    """Follow a recording's advertised ancestors without assuming that an unrecognized folder is the HDD."""
+
+    source = MetadataSource('TOSHIBA', 'DBR-TEST', recording_xml().replace('parentID="0"', 'parentID="folder"'))
+    for identifier, parent, title in [('folder', 'usb', 'Programs'), ('usb', '0', folder_title)]:
+        source.metadata_by_id[identifier] = (
+            '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
+            'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">'
+            f'<container id="{identifier}" parentID="{parent}"><dc:title>{title}</dc:title>'
+            '<upnp:class>object.container</upnp:class></container></DIDL-Lite>'
+        )
+    async with source.serve() as (location, _), DLNAClient() as dlna:
+        server = await dlna.get_server(location)
+        recording = await server.get_metadata('V_42')
+        assert isinstance(recording, Recording)
+        await server.collect_metadata(recording, additional=False)
+        assert len(source.calls) == 1
+        metadata = await server.collect_metadata(recording)
+        storage = next(query for query in metadata.queries if query.name == 'storage')
+        if folder_title == 'All recordings':
+            assert storage.status == 'omitted'
+            assert storage.data == {}
+        else:
+            assert storage.status == 'known'
+            assert storage.data == {'name': 'Archive drive', 'container_id': 'usb', 'container_title': folder_title}
+        assert [arguments['ObjectID'] for name, arguments in source.calls if name == 'Browse'] == [
+            'V_42',
+            'folder',
+            'usb',
+        ]
+        MetadataSidecar(tmp_path / 'recording.m2ts', metadata)
+        saved = RecordingMetadata.model_validate_json(
+            (tmp_path / 'recording.metadata.json').read_text(encoding='utf-8')
+        )
+        assert saved.queries == metadata.queries
+        assert any(folder_title.encode('utf-8') in response.body for response in saved.responses)
+        info = await asyncio.to_thread(CliRunner().invoke, app, ['info', '--server', location, '--id', 'V_42'])
+        assert info.exit_code == 0, info.output
+        if storage.status == 'known':
+            assert 'Archive drive' in info.output
 
 
 @pytest.mark.anyio
