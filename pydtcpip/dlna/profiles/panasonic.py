@@ -6,7 +6,7 @@ from xml.etree import ElementTree as ET
 from pydtcpip.dlna.description import DeviceDescription
 from pydtcpip.dlna.profiles.base import ChapterField, CopyCountField, Profile
 from pydtcpip.dlna.profiles.generic import GENERIC
-from pydtcpip.models import ResourceConversion
+from pydtcpip.models import Recording, ResourceConversion
 
 
 def _matches(description: DeviceDescription) -> bool:
@@ -52,13 +52,33 @@ def _read_resource_conversion(item: ET.Element, resource: ET.Element) -> Resourc
     return None
 
 
+def _needs_listing_metadata(recording: Recording) -> bool:
+    """
+    Request listing metadata only when the selected resource has no usable copy count.
+
+    Args:
+        recording (Recording): Recording returned by BrowseMetadata
+
+    Returns:
+        bool: Whether the parent listing may supply a missing copy count
+    """
+
+    resource = recording.original_resource
+    return not any(
+        (count.value is not None or count.is_unlimited is True)
+        and (count.resource_url is None or (resource is not None and count.resource_url == resource.url))
+        for count in recording.protection.reported_copy_counts
+    )
+
+
 PANASONIC = Profile(
     name='panasonic',
     parent=GENERIC,
     matches=_matches,
     is_unverified=True,
-    # CopyCount is available in parent listings but omitted from BrowseMetadata
+    # Some models omit CopyCount from BrowseMetadata but include it in parent listings
     has_listing_only_metadata=True,
+    needs_listing_metadata=_needs_listing_metadata,
     # Finite counts include the final Move; CF and -1 denote unrestricted copies
     copy_count_fields=(
         CopyCountField(

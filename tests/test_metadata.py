@@ -329,6 +329,22 @@ class MetadataSource:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize('count', ['10', '1', 'CF', '-1', None])
+async def test_cli_panasonic_fetches_parent_only_for_missing_copy_count(count: str | None) -> None:
+    """Known counts avoid a full folder scan, while omitted counts retain the listing fallback."""
+
+    source = MetadataSource('Panasonic', 'BD/DVD Recorder', recording_xml(attributes='pxn:CopyCount="9"'))
+    source.metadata_didl = recording_xml(attributes=f'pxn:CopyCount="{count}"' if count is not None else '')
+    async with source.serve() as (location, _):
+        result = await asyncio.to_thread(
+            CliRunner().invoke, app, ['info', '--server', location, '--id', 'V_42', '--basic']
+        )
+    assert result.exit_code == 0, result.output
+    flags = [arguments['BrowseFlag'] for name, arguments in source.calls if name == 'Browse']
+    assert flags == (['BrowseMetadata', 'BrowseDirectChildren'] if count is None else ['BrowseMetadata'])
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ('manufacturer', 'model', 'fields', 'attributes', 'format', 'action'),
     [

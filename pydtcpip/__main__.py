@@ -332,7 +332,7 @@ async def _select_recording(server: MediaServer, object_id: str | None) -> Recor
         # Some families provide fields only in listings (e.g. network and service IDs on REGZA TVs)
         # Find the recording in its parent listing to include those fields in the saved program metadata
         ## Large folders can take tens of seconds to list, so skip this for other families
-        if server.profile.resolve_has_listing_only_metadata() is False:
+        if server.profile.resolve_has_listing_only_metadata(item) is False:
             return item
         try:
             with console.status('Fetching recording information...'):

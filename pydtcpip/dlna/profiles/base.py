@@ -8,7 +8,7 @@ from xml.etree import ElementTree as ET
 
 from pydtcpip.dlna.description import DeviceDescription
 from pydtcpip.errors import PyDTCPIPError
-from pydtcpip.models import ChapterResource, ProtectionValue, ReportedCopyCount, ResourceConversion
+from pydtcpip.models import ChapterResource, ProtectionValue, Recording, ReportedCopyCount, ResourceConversion
 
 
 @dataclass(frozen=True)
@@ -61,6 +61,8 @@ class Profile:
     recording_roots: tuple[str, ...] | None = None
     # Interpret resource conversion only when protocolInfo omits DLNA.ORG_CI
     read_resource_conversion: Callable[[ET.Element, ET.Element], ResourceConversion | None] | None = None
+    # Decide whether an individual recording still needs its parent listing
+    needs_listing_metadata: Callable[[Recording], bool] | None = None
 
     def resource_conversion(self, item: ET.Element, resource: ET.Element) -> ResourceConversion | None:
         """
@@ -263,9 +265,12 @@ class Profile:
             profile = profile.parent
         raise LookupError('The generic root profile has no interpret_http_status function.')
 
-    def resolve_has_listing_only_metadata(self) -> bool:
+    def resolve_has_listing_only_metadata(self, recording: Recording | None = None) -> bool:
         """
         Resolve whether listings contain fields absent from individual recording metadata.
+
+        Args:
+            recording (Recording | None): Individual metadata to check, if already available
 
         Returns:
             bool: Value defined by the nearest ancestor
@@ -273,6 +278,8 @@ class Profile:
 
         profile: Profile | None = self
         while profile is not None:
+            if recording is not None and profile.needs_listing_metadata is not None:
+                return profile.needs_listing_metadata(recording)
             if profile.has_listing_only_metadata is not None:
                 return profile.has_listing_only_metadata
             profile = profile.parent
