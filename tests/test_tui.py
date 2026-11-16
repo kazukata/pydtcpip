@@ -841,10 +841,12 @@ async def test_editing_the_destination_updates_the_move_button(tmp_path: Path) -
             empty = tmp_path / 'empty'
             empty.mkdir()
             field = app.screen.query_one('#confirm-directory', Input)
-            # A partially typed ~user cannot be expanded and must not close the interface
-            field.value = '~pydtcpip-no-such-user'
-            await pilot.pause(0.2)
-            assert (app.is_running, move.disabled) == (True, True)
+            if sys.platform != 'win32':
+                # A partially typed ~user cannot be expanded and must not close the interface
+                ## Windows expands any ~user to a directory beside the current home directory instead
+                field.value = '~pydtcpip-no-such-user'
+                await pilot.pause(0.2)
+                assert (app.is_running, move.disabled) == (True, True)
             # An empty destination would silently refer to the current directory
             field.value = '  '
             await pilot.pause(0.2)
