@@ -1,0 +1,15 @@
+<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/" xmlns:arib="urn:schemas-arib-or-jp:elements-1-0/" xmlns:pxn="urn:schemas-panasonic-com:pxn" xmlns:vli="urn:schemas-panasonic-com:vli">
+<item id="AV-0-0-268435456-0-0-268435460-81170910" parentID="AV_ALL" restricted="0">
+<dc:title>伏せた値</dc:title>
+<upnp:writeStatus>NOT_WRITABLE</upnp:writeStatus>
+<upnp:recordable>0</upnp:recordable>
+<upnp:channelID type="DIGITAL">伏せた値</upnp:channelID>
+<upnp:class name="videoItem">object.item.videoItem</upnp:class>
+<upnp:genre>ドラマ</upnp:genre>
+<dc:date>伏せた値</dc:date>
+<res protocolInfo="http-get:*:application/x-dtcp1;DTCP1HOST=192.0.2.1;DTCP1PORT=60010;CONTENTFORMAT=&quot;video/vnd.dlna.mpeg-tts&quot;:DLNA.ORG_PN=DTCP_AVC_TS_JP_AAC_T;DLNA.ORG_OP=10;DLNA.ORG_FLAGS=01519000000000000000000000000000" duration="0:30:03" bitrate="367092" pxn:StreamPort="60001" pxn:deviceInfo="DIGA-1.00" dlna:cleartextSize="661868544" pxn:EasyTransfer="0" pxn:CopyCount="10" pxn:VgaResCount="1">http://192.0.2.1:60001/TB0_010110_BDY?CI=1&amp;fmt=AVC_TS_JP_AAC_T&amp;bitrate=367092</res>
+<res protocolInfo="http-get:*:application/x-dtcp1;DTCP1HOST=192.0.2.1;DTCP1PORT=60010;CONTENTFORMAT=&quot;video/vnd.dlna.mpeg-tts&quot;:DLNA.ORG_PN=DTCP_AVC_TS_MP_HD_AAC_LTP_T;DLNA.ORG_OP=10;DLNA.ORG_CI=1;DLNA.ORG_FLAGS=01519000000000000000000000000000" duration="0:30:03" bitrate="200000">http://192.0.2.1:60001/TB0_010110_BDY?CI=1&amp;fmt=AVC_TS_MP_HD_AAC_LTP_T&amp;bitrate=200000</res>
+<res protocolInfo="http-get:*:application/x-dtcp1;DTCP1HOST=192.0.2.1;DTCP1PORT=60010;CONTENTFORMAT=&quot;video/vnd.dlna.mpeg-tts&quot;:DTV_MVP_PN=DTCP_AVC_TS_DTV_SD_AAC_T;DLNA.ORG_OP=10;DLNA.ORG_CI=1;DLNA.ORG_FLAGS=01519000000000000000000000000000" duration="0:30:03" bitrate="100000">http://192.0.2.1:60001/TB0_010110_BDY?CI=1&amp;fmt=AVC_TS_DTV_SD_AAC_T&amp;bitrate=100000</res>
+<pxn:EncContentURI protocolInfo="http-get:*:application/x-dtcp1;DTCP1HOST=192.0.2.1;DTCP1PORT=60010" recMode="4x" bitrate="162000">http://192.0.2.1:60001/TB0_010110_BDY?CI=1&amp;fmt=AVC_TS_DTV_SD_AAC_T</pxn:EncContentURI>
+</item>
+</DIDL-Lite>

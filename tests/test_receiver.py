@@ -12,6 +12,7 @@ from xml.etree import ElementTree as ET
 
 import aiohttp
 import pytest
+from aiohttp import web
 from rich.progress import Progress
 
 import pydtcpip.__main__ as cli
@@ -56,20 +57,34 @@ async def test_cli_receiver_preserves_retries_and_finalization(
     receivers: list[DubbingReceiver] = []
     tasks: list[asyncio.Task[None]] = []
     started = asyncio.Event()
-    original_start = DubbingReceiver.start
+    upload_finished = asyncio.Event()
     replace = os.replace
     failed_updates: list[Path] = []
 
-    async def start(receiver: DubbingReceiver) -> None:
-        """Expose the CLI listener to the test sender after startup.
+    class ObservedReceiver(DubbingReceiver):
+        """Expose receiver startup and completed upload cleanup to the test sender."""
 
-        Args:
-            receiver (DubbingReceiver): CLI-owned receiver
-        """
+        async def start(self) -> None:
+            """Expose the CLI listener to the test sender after startup."""
 
-        await original_start(receiver)
-        receivers.append(receiver)
-        started.set()
+            await super().start()
+            receivers.append(self)
+            started.set()
+
+        async def _handle_upload(self, request: web.Request) -> web.StreamResponse:
+            """Notify the test after cleanup releases the receiver's upload lock.
+
+            Args:
+                request (web.Request): Incoming recording upload
+
+            Returns:
+                web.StreamResponse: Original upload response
+            """
+
+            try:
+                return await super()._handle_upload(request)
+            finally:
+                upload_finished.set()
 
     def execute(coroutine: Coroutine[None, None, None]) -> None:
         """Run the CLI listener in the test's event loop.
@@ -99,7 +114,7 @@ async def test_cli_receiver_preserves_retries_and_finalization(
     monkeypatch.setenv('PYDTCPIP_CERTIFICATE', sink_device.certificate.hex())
     monkeypatch.setenv('PYDTCPIP_PRIVATE_KEY', sink_device.private_key.hex())
     monkeypatch.setattr(cli, '_device_store', DeviceStore(tmp_path / 'device'))
-    monkeypatch.setattr(DubbingReceiver, 'start', start)
+    monkeypatch.setattr(cli, 'DubbingReceiver', ObservedReceiver)
     monkeypatch.setattr('pydtcpip.metadata.os.replace', replace_file)
     cli.receive(tmp_path, interface='127.0.0.1', source=['127.0.0.1'], port=0)
     try:
@@ -113,15 +128,21 @@ async def test_cli_receiver_preserves_retries_and_finalization(
                 assert await television.upload(import_uri, truncation='boundary') is None
                 await asyncio.wait_for(source.cancelled.wait(), 5)
                 await asyncio.wait_for(source.disconnected.wait(), 5)
+                # The control connection closes before asynchronous partial-file cleanup finishes
+                await asyncio.wait_for(upload_finished.wait(), 5)
                 assert list(tmp_path.glob('*.m2ts')) == []
+            upload_finished.clear()
             assert await television.upload(import_uri) == 200
             await asyncio.wait_for(source.disconnected.wait(), 5)
+            await asyncio.wait_for(upload_finished.wait(), 5)
             assert source.log[-2:] == ['finalize', 'complete']
             assert source.errors == []
             (archive_path,) = tmp_path.glob('*.metadata.json')
             completed_archive = archive_path.read_bytes()
+            upload_finished.clear()
             assert await television.upload(import_uri) == 500
             await asyncio.wait_for(source.disconnected.wait(), 5)
+            await asyncio.wait_for(upload_finished.wait(), 5)
             assert archive_path.read_bytes() == completed_archive
     finally:
         tasks[0].cancel()

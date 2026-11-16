@@ -77,8 +77,10 @@ indent-width = 4
 target-version = "py313"
 
 [tool.ruff.lint]
+preview = true
+explicit-preview-rules = true
 # Enable flake8, pycodestyle, pyupgrade, isort, and Ruff rules
-select = ["F", "E", "W", "UP", "I", "RUF"]
+select = ["F", "E", "W", "UP", "I", "RUF", "PLW1514"]
 ignore = [
     "E501",    # Allow lines longer than the limit
     "RUF001",  # Allow ambiguous Unicode characters in strings

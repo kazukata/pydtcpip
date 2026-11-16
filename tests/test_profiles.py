@@ -26,11 +26,14 @@ _PROFILE_ALLOWED_IMPORTS = frozenset(
     )
 )
 
-# Expected profile, copy count status, and value for each device fixture
+# Expected profile, copy count status, copy count value, and DLNA.ORG_CI of the original resource
+## None means the family does not mark the stored format, so the original resource is the one not marked as converted
 _EXPECTED = {
     # A regza:copycount of 10 includes the final Move, leaving 9 copies as shown on the TV
-    ('toshiba', 'dbr-z620'): ('toshiba', 'known', 9),
-    ('toshiba_regza_tv', '43z570l'): ('toshiba_regza_tv', 'omitted', None),
+    ('toshiba', 'dbr-z620'): ('toshiba', 'known', 9, '0'),
+    ('toshiba_regza_tv', '43z570l'): ('toshiba_regza_tv', 'omitted', None, '0'),
+    # A pxn:CopyCount of 10 likewise includes the final Move
+    ('panasonic', 'dmr-brx2060'): ('panasonic', 'known', 9, None),
 }
 
 
@@ -125,7 +128,7 @@ def test_fixture_recordings_keep_their_protection_values(vendor: str, model: str
     recordings = [item for item in objects if isinstance(item, Recording)]
     assert len(recordings) == 1
 
-    expected_profile, expected_status, expected_value = _EXPECTED[(vendor, model)]
+    expected_profile, expected_status, expected_value, expected_ci = _EXPECTED[(vendor, model)]
     assert profile.name == expected_profile
     assert recordings[0].protection.remaining_copy_count.status == expected_status
     assert recordings[0].protection.remaining_copy_count.value == expected_value
@@ -133,7 +136,7 @@ def test_fixture_recordings_keep_their_protection_values(vendor: str, model: str
     # Prefer the original resource (DLNA.ORG_CI=0) over a transcoded resource
     original = recordings[0].original_resource
     assert original is not None
-    assert original.protocol_info.parameters.get('DLNA.ORG_CI') == '0'
+    assert original.protocol_info.parameters.get('DLNA.ORG_CI') == expected_ci
 
 
 def test_generic_profile_handles_standard_dlna_without_vendor_meaning() -> None:

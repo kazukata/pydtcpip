@@ -39,7 +39,7 @@ _DIDL = """<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns
 <v:info title="属性に入った番組名" start="2020-12-31T23:59:59"/>
 <v:prog>子要素の前の番組名<v:x/></v:prog>
 <!-- コメントに入った番組名 -->
-<res protocolInfo="http-get:*:application/x-dtcp1;DTCP1HOST=198.51.100.20;DTCP1PORT=5000:DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01110000000000000000000000000000" size="1966473216" duration="01:00:08.000">http://198.51.100.20:8080/秘密の番組_a1b2c3d4e5f6.dtv</res>
+<res protocolInfo="http-get:*:application/x-dtcp1;DTCP1HOST=198.51.100.20;DTCP1PORT=5000:DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01110000000000000000000000000000" size="1966473216" duration="01:00:08.000" v:CopyCount="9" v:ResumePoint="0:00:01">http://198.51.100.20:8080/秘密の番組_a1b2c3d4e5f6.dtv</res>
 </item>
 </DIDL-Lite>
 """
@@ -99,6 +99,9 @@ def test_didl_redacts_every_unknown_place() -> None:
     assert '<upnp:class>object.item.videoItem</upnp:class>' in redacted
     assert 'size="1966473216" duration="01:00:08.000"' in redacted
     assert 'DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01110000000000000000000000000000' in redacted
+    # Copy counts are needed to add a device family, while other vendor attributes stay redacted
+    assert 'v:CopyCount="9"' in redacted
+    assert 'v:ResumePoint="redacted"' in redacted
 
 
 def test_item_fragment_without_root_is_redacted() -> None:

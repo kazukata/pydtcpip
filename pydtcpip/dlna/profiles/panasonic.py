@@ -26,6 +26,8 @@ PANASONIC = Profile(
     parent=GENERIC,
     matches=_matches,
     is_unverified=True,
+    # CopyCount is available in parent listings but omitted from BrowseMetadata
+    has_listing_only_metadata=True,
     # Finite counts include the final Move; CF and -1 denote unrestricted copies
     copy_count_fields=(
         CopyCountField(

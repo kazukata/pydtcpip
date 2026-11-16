@@ -172,6 +172,8 @@ class MetadataSource:
         self.requests: list[str] = []
         self.raw_description = ''
         self.requery_didl: str | None = None
+        self.requery_ready: asyncio.Event | None = None
+        self.metadata_didl: str | None = None
         self.response_bodies: dict[str, bytes] = {}
 
     async def handle(self, request: web.Request) -> web.Response:
@@ -229,7 +231,12 @@ class MetadataSource:
             return web.Response(body=self.response_bodies[name], content_type='text/xml')
         if name == 'Browse':
             result = self.didl
-            if self.requery_didl is not None:
+            if self.metadata_didl is not None and arguments['BrowseFlag'] == 'BrowseMetadata':
+                result = self.metadata_didl
+            if self.requery_didl is not None and self.requery_ready is not None:
+                if self.requery_ready.is_set():
+                    result = self.requery_didl
+            elif self.requery_didl is not None:
                 self.didl = self.requery_didl
         elif name == self.action:
             result = self.chapter
@@ -327,7 +334,7 @@ async def test_metadata_collection_and_sidecars(
     assert saved.recording == recording
     assert saved.chapters == metadata.chapters
     assert [event['type'] for event in saved.transfer_events] == ['move_completed']
-    assert output.with_suffix('.xml').read_text() == recording.raw_xml
+    assert output.with_suffix('.xml').read_text(encoding='utf-8') == recording.raw_xml
     with pytest.raises(FileExistsError):
         MetadataSidecar(output, metadata)
 
@@ -554,6 +561,8 @@ async def test_cli_move_archives_metadata_and_completion(
             dict(_CHAPTER_CASES)['panasonic'],
         )
         metadata_source.requery_didl = recording_xml(attributes='pxn:CopyCount="9"', resource_url=media.url)
+        metadata_source.requery_ready = source.completed
+        metadata_source.metadata_didl = recording_xml(resource_url=media.url)
         async with metadata_source.serve() as (location, _):
             result = await asyncio.to_thread(
                 CliRunner().invoke,
@@ -576,7 +585,7 @@ async def test_cli_move_archives_metadata_and_completion(
     assert output.read_bytes() == content
     assert output.with_name(f'{output.name}.pydtcpip-resume.json').exists() is False
     assert failed_updates == (['move_finalized'] if should_fail_finalized_sidecar else [])
-    saved_text = output.with_suffix('.metadata.json').read_text()
+    saved_text = output.with_suffix('.metadata.json').read_text(encoding='utf-8')
     metadata = RecordingMetadata.model_validate_json(saved_text)
     assert metadata.recording.protection.remaining_copy_count.value == 9
     assert metadata.chapters.chapters[0].position_ms == 12345

@@ -1,0 +1,35 @@
+<?xml version="1.0"?><root xmlns="urn:schemas-upnp-org:device-1-0" xmlns:dlna="urn:schemas-dlna-org:device-1-0" xmlns:vli="urn:schemas-panasonic-com:vli" xmlns:sptv="urn:schemas-skyperfectv-co-jp:device-1-0" xmlns:jlabs="urn:schemas-jlabs-or-jp:device-1-0">
+<specVersion><major>1</major><minor>0</minor></specVersion>
+<device>
+<deviceType>urn:schemas-upnp-org:device:MediaServer:2</deviceType>
+<friendlyName>伏せた値</friendlyName>
+<manufacturer>Panasonic</manufacturer>
+<modelName>BD/DVD Recorder</modelName>
+<modelNumber>DMR-BRX/BCX2060</modelNumber>
+<modelDescription>BD/DVD Recorder</modelDescription>
+<UDN>uuid:00000000-0000-0000-0000-000000000001</UDN>
+<dlna:X_DLNADOC>DMS-1.50</dlna:X_DLNADOC>
+<dlna:X_DLNACAP>av-upload,image-upload,dtcp-copy,dtcp-move</dlna:X_DLNACAP>
+<sptv:X_SPTVCAP>REC-1.00,X_SRS-1.00,NEXT_READY-60,MOVE_RES-1.00,MOVE-1.00,NEXT_MOVE_COPY-60</sptv:X_SPTVCAP>
+<jlabs:X_JLABSCAP>serve-1.0,upload_rec_sink-1.0,upload_dub_sink-1.0,margin_rec-1.0-60,margin_move-1.0-60</jlabs:X_JLABSCAP>
+<vli:X_UPS_PROFILE>DTCP_MPEG_TS_JP_T,DTCP_AVC_TS_JP_AAC_T</vli:X_UPS_PROFILE>
+<vli:X_MOJ_DTCP_PORT_HOME>60010</vli:X_MOJ_DTCP_PORT_HOME>
+<vli:X_RSRegiPort>60010</vli:X_RSRegiPort>
+<serviceList>
+<service>
+<serviceType>urn:schemas-upnp-org:service:ContentDirectory:2</serviceType>
+<serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId>
+<SCPDURL>http://192.0.2.1:60606/Server0/CDS_SCPD</SCPDURL>
+<controlURL>http://192.0.2.1:60606/Server0/CDS_control</controlURL>
+<eventSubURL>http://192.0.2.1:60606/Server0/CDS_event</eventSubURL>
+</service>
+<service>
+<serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
+<serviceId>urn:upnp-org:serviceId:ConnectionManager</serviceId>
+<SCPDURL>http://192.0.2.1:60606/Server0/CMS_SCPD</SCPDURL>
+<controlURL>http://192.0.2.1:60606/Server0/CMS_control</controlURL>
+<eventSubURL>http://192.0.2.1:60606/Server0/CMS_event</eventSubURL>
+</service>
+</serviceList>
+</device>
+</root>
