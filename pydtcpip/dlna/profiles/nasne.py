@@ -1,12 +1,13 @@
 """Shared profile for nasne devices sold by Sony and Buffalo."""
 
+from urllib.parse import parse_qs, urlsplit
 from xml.etree import ElementTree as ET
 
 from pydtcpip.dlna.description import DeviceDescription
 from pydtcpip.dlna.profiles.base import CopyCountField, Profile
 from pydtcpip.dlna.profiles.generic import GENERIC
 from pydtcpip.errors import ClientNotAllowedError, PyDTCPIPError
-from pydtcpip.models import ProtectionValue
+from pydtcpip.models import ProtectionValue, Resource, ResourceVariant
 
 
 # Namespace of av:COGCount, which reports a recording's remaining copies
@@ -50,6 +51,30 @@ def _read_remaining_copy_count(item: ET.Element) -> ProtectionValue[int]:
     return ProtectionValue[int](status='known', value=int(value.strip()) - 1, source='metadata')
 
 
+def _read_resource_variant(resource: Resource) -> ResourceVariant | None:
+    """
+    Distinguish the recorded DR or three-times format from the separate mobile version.
+
+    Args:
+        resource (Resource): Resource with the recorder's advertised URL
+
+    Returns:
+        ResourceVariant | None: URL evidence, or None for an unrecognized quality value
+    """
+
+    parameters = parse_qs(urlsplit(resource.url).query, keep_blank_values=True)
+    quality = parameters.get('quality', [''])[0]
+    if quality not in ('dr', 'x3', 'mobile'):
+        return None
+    return ResourceVariant(
+        kind='mobile' if quality == 'mobile' else 'main',
+        source='resource_url',
+        field_name='quality',
+        raw_value=quality,
+        is_move_only='cp' in parameters,
+    )
+
+
 def _interpret_http_status(status: int, url: str) -> PyDTCPIPError | None:
     """
     Interpret nasne's client authorization refusal.
@@ -80,4 +105,5 @@ NASNE = Profile(
     interpret_http_status=_interpret_http_status,
     copy_count_fields=(CopyCountField(f'{{{_SONY_AV_NAMESPACE}}}COGCount', includes_final_move=True),),
     extension='nasne',
+    read_resource_variant=_read_resource_variant,
 )

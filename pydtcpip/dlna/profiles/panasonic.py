@@ -63,7 +63,7 @@ def _needs_listing_metadata(recording: Recording) -> bool:
         bool: Whether the parent listing may supply a missing copy count
     """
 
-    resource = recording.original_resource
+    resource = recording.original_move_resource
     return not any(
         (count.value is not None or count.is_unlimited is True)
         and (count.resource_url is None or (resource is not None and count.resource_url == resource.url))

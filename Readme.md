@@ -57,7 +57,9 @@ pydtcpip is a foundation library for recovering broadcast recordings from aging 
 - **Streaming reception without consuming the copy count**: Data delivery with backpressure control through asynchronous callbacks, and transfer to FFplay or similar tools through standard output (`stream`)
 - **Diagnostic data export**: Export of protocol responses from unsupported models with identifying information and program titles masked for issue reports (`dump --mask-private`)
 
-When a recording device serves both the stored format (`DLNA.ORG_CI=0`) and a converted format, the lossless stored format is selected preferentially.
+Transfers select the main recording in its stored quality, using `DLNA.ORG_CI` and family-specific metadata to distinguish it from converted and mobile versions. An AVC or nasne three-times recording is transferred in that recorded format; original quality does not require DR mode. Dedicated Move URLs are preferred for dubbing and excluded from automatic streaming selection.
+
+`info` displays the default streaming and Move resources and the evidence used to classify their quality. If the device supplies insufficient information, the CLI warns that the selected resource's quality is unknown. To select a converted or mobile version explicitly, pass its resource URL to `stream` or `move --url`.
 
 ## Supported devices
 
@@ -416,10 +418,10 @@ async def main() -> None:
     ):
         server = await dlna.get_server('http://192.0.2.20:5000/description.xml')
         recording = await server.get_metadata('RECORDING_ID')
-        if not isinstance(recording, Recording) or recording.original_resource is None:
-            raise ValueError('The recording has no streamable original resource.')
+        if not isinstance(recording, Recording) or recording.original_move_resource is None:
+            raise ValueError('The recording has no original-quality resource for Move.')
         await client.move(
-            recording.original_resource,
+            recording.original_move_resource,
             FileSink(output),
             on_resume_state=save_resume_state,
         )
@@ -474,7 +476,7 @@ However, whether subtitles and data broadcasts are included or only video and au
 > DIDL-Lite stores broadcast metadata such as program titles, detailed descriptions, broadcast dates and times, channel names, genres, and remaining copy counts, and also includes manufacturer- and model-specific extension elements.  
 > **Keep `.m2ts`, `.xml` and `.metadata.json` together when archiving so that programs can be identified later, including information absent from the TS.**
 
-The XML retains the established DIDL-Lite item format, with ARIB broadcast symbols converted to readable Unicode. The JSON contains parsed fields alongside the source XML values before that conversion, resource attributes, raw copy counts, their interpretation and observation times.  
+The XML retains the established DIDL-Lite item format, with ARIB broadcast symbols converted to readable Unicode. The JSON contains parsed fields alongside the source XML values before that conversion, resource attributes, original/mobile quality evidence, raw copy counts, their interpretation and observation times.  
 For client-initiated Move, it also includes the device description, service descriptions used by optional queries, chapters and additional responses. The source item XML is reserialized, so namespace prefixes and whitespace can differ from the response; incoming transfers additionally preserve the sender's complete `CreateObject` XML unchanged.
 The JSON's `responses` field retains complete HTTP and SOAP response bodies, headers, status codes and observation times even when their metadata format cannot be parsed.
 

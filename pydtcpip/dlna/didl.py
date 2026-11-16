@@ -16,6 +16,7 @@ from pydtcpip.models import (
     ReportedCopyCount,
     Resource,
     ResourceConversion,
+    select_original_resource,
 )
 
 
@@ -192,13 +193,14 @@ def _parse_resource(element: ET.Element, item: ET.Element, profile: Profile) -> 
             raw_value=protocol_info.parameters['DLNA.ORG_CI'],
         )
     )
-    return Resource(
+    resource = Resource(
         url=(element.text or '').strip(),
         protocol_info=protocol_info,
         attributes=dict(element.attrib),
         raw_xml=ET.tostring(element, encoding='unicode'),
         conversion=conversion,
     )
+    return resource.model_copy(update={'variant': profile.resource_variant(resource)})
 
 
 def _read_protection(
@@ -220,14 +222,8 @@ def _read_protection(
         RecordingProtection: Protection information available from the listing
     """
 
-    # Determine Move support from the advertised original-format resource used for lossless transfer
-    target: Resource | None = None
-    for resource in resources:
-        if resource.protocol_info.is_dtcp is True and resource.is_converted is False:
-            target = resource
-            break
-        if target is None and resource.protocol_info.is_dtcp is True and resource.is_converted is None:
-            target = resource
+    # Use the same resource as the Move command, including dedicated transfer URLs
+    target = select_original_resource(resources, for_move=True)
 
     # An encoded derivative may advertise a different count from the original recording
     # Keep every observation, but normalize only a recording-level count or the selected original's count

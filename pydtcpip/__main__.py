@@ -397,21 +397,30 @@ def _is_broadcast(recording: Recording) -> bool:
     return recording.upnp_class.startswith('object.item.videoItem.videoBroadcast')
 
 
-def _choose_resource(recording: Recording) -> Resource:
+def _choose_resource(recording: Recording, *, for_move: bool = False) -> Resource:
     """
     Select an original-format resource for lossless transfer.
 
     Args:
         recording (Recording): Recording whose resources are inspected
+        for_move (bool): Select the original-quality Move endpoint instead of the streaming endpoint
 
     Returns:
         Resource: Selected DTCP-IP resource
     """
 
-    resource = recording.original_resource
+    resource = recording.original_move_resource if for_move is True else recording.original_resource
     if resource is None:
-        console.print('[red]This recording has no DTCP-IP-protected resource in its original format.[/red]')
+        console.print(
+            '[red]This recording has no original-quality DTCP-IP resource for this operation. '
+            'To select another quality explicitly, supply its resource URL.[/red]'
+        )
         raise typer.Exit(1)
+    if resource.is_original_quality is None:
+        console.print(
+            '[yellow]The recorder does not identify the original recording quality. '
+            'Using a resource that is not identified as converted or mobile.[/yellow]'
+        )
     return resource
 
 
@@ -429,7 +438,7 @@ def _format_recording_copy_count(recording: Recording) -> str:
     count = recording.protection.remaining_copy_count
     if count.status == 'known':
         return _format_protection(count)
-    original = recording.original_resource
+    original = recording.original_move_resource
     for reported in recording.protection.reported_copy_counts:
         if reported.resource_url is not None and (original is None or reported.resource_url != original.url):
             continue
@@ -495,12 +504,29 @@ def _print_recording(recording: Recording, device_declarations: dict[str, str] |
             convention = 'Includes final Move' if count.includes_final_move else 'Excludes final Move'
         table.add_row(f'Reported count ({count.field_name.rpartition("}")[2]})', f'{count.raw_value} ({convention})')
     for index, resource in enumerate(recording.resources, start=1):
-        converted = {True: 'Converted', False: 'Original format', None: 'Unknown'}[resource.is_converted]
+        quality = {True: 'Original recording', False: 'Converted or mobile version', None: 'Quality unknown'}[
+            resource.is_original_quality
+        ]
         # Profile names can use DLNA.ORG_PN, DLPA.JP_PN, or a vendor namespace such as TOSHIBA.CO.JP_PN
         profile_name = next(
             (value for name, value in resource.protocol_info.parameters.items() if name.endswith('_PN')), ''
         )
-        table.add_row(f'Resource {index}', f'{converted} {profile_name}')
+        table.add_row(f'Resource {index}', f'{quality} {profile_name}')
+        uses: list[str] = []
+        if resource == recording.original_resource:
+            uses.append('Streaming')
+        if resource == recording.original_move_resource:
+            uses.append('Move')
+        if uses:
+            table.add_row(f'Resource {index}: Default selection', ', '.join(uses))
+        if resource.variant is not None:
+            variant = resource.variant
+            table.add_row(
+                f'Resource {index}: Recording version',
+                Text(f'{variant.kind} ({variant.source}: {variant.field_name}={variant.raw_value})'),
+            )
+            if variant.is_move_only is True:
+                table.add_row(f'Resource {index}: Transfer use', 'Move only')
         if resource.conversion is not None:
             table.add_row(
                 f'Resource {index}: Format evidence',
@@ -952,7 +978,7 @@ def move(
                 if _is_broadcast(recording) is True:
                     console.print(f'[red]{recording.title} is a live channel and cannot be moved.[/red]')
                     raise typer.Exit(1)
-                target = _choose_resource(recording)
+                target = _choose_resource(recording, for_move=True)
 
             # Show the recording and copy count with its acquisition status before asking for confirmation
             remaining = None

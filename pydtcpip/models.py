@@ -226,6 +226,18 @@ class ResourceConversion(BaseModel):
     raw_value: str
 
 
+class ResourceVariant(BaseModel):
+    """Family-specific evidence distinguishing the main recording from its mobile version."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal['main', 'mobile']
+    source: Literal['protocol_info', 'resource_url']
+    field_name: str
+    raw_value: str
+    is_move_only: bool = False
+
+
 class Resource(BaseModel):
     """A recording resource (a DIDL-Lite res element)."""
 
@@ -237,6 +249,7 @@ class Resource(BaseModel):
     attributes: dict[str, str]
     raw_xml: str
     conversion: ResourceConversion | None = None
+    variant: ResourceVariant | None = None
 
     @property
     def is_converted(self) -> bool | None:
@@ -245,6 +258,21 @@ class Resource(BaseModel):
         if self.conversion is not None:
             return self.conversion.is_converted
         return self.protocol_info.is_converted
+
+    @property
+    def is_original_quality(self) -> bool | None:
+        """
+        Distinguish the main recording from conversions and separately stored mobile versions.
+
+        Returns:
+            bool | None: Whether this is the main recording in its stored format, or None without evidence
+        """
+
+        if self.is_converted is True or (self.variant is not None and self.variant.kind == 'mobile'):
+            return False
+        if self.variant is not None or self.is_converted is False:
+            return True
+        return None
 
     @property
     def duration(self) -> str | None:
@@ -285,6 +313,40 @@ class Resource(BaseModel):
         if value is None or value.isdecimal() is False:
             return None
         return int(value)
+
+
+def select_original_resource(resources: tuple[Resource, ...], *, for_move: bool = False) -> Resource | None:
+    """
+    Select the main recording for streaming or Move without falling back to a mobile or converted version.
+    Retain the first unclassified resource when the recorder supplies no original-quality evidence.
+
+    Args:
+        resources (tuple[Resource, ...]): Advertised resources in document order
+        for_move (bool): Prefer a Move endpoint instead of excluding Move-only URLs
+
+    Returns:
+        Resource | None: Selected resource, or None when only converted or mobile versions are available
+    """
+
+    selected: Resource | None = None
+    selected_rank = (-1, -1)
+    for resource in resources:
+        if resource.protocol_info.is_dtcp is False or resource.is_original_quality is False:
+            continue
+        is_move_only = resource.variant is not None and resource.variant.is_move_only
+        if for_move is False and is_move_only is True:
+            continue
+        move_rank = 0
+        if for_move is True:
+            flags = resource.protocol_info.parameters.get('DTCP.COM_FLAGS', '')[:8]
+            if len(flags) == 8 and all(character in '0123456789abcdefABCDEF' for character in flags):
+                move_rank = 1 if int(flags, 16) & (1 << 31) else -1
+            if is_move_only is True:
+                move_rank = 2
+        rank = (int(resource.is_original_quality is True), move_rank)
+        if rank > selected_rank:
+            selected, selected_rank = resource, rank
+    return selected
 
 
 class RecordingProtection(BaseModel):
@@ -358,18 +420,25 @@ class Recording(BaseModel):
     @property
     def original_resource(self) -> Resource | None:
         """
-        Return a DTCP-IP resource in the recorder's stored format.
-        Prefer a resource identified as stored content; otherwise use the first with unknown conversion status.
+        Return the main recording's streaming resource, excluding mobile versions and Move-only URLs.
+        Prefer original-quality evidence; otherwise use the first resource whose quality is unknown.
+
+        Returns:
+            Resource | None: Streaming resource, or None when no suitable resource is advertised
         """
 
-        dtcp_resources = [resource for resource in self.resources if resource.protocol_info.is_dtcp is True]
-        for resource in dtcp_resources:
-            if resource.is_converted is False:
-                return resource
-        for resource in dtcp_resources:
-            if resource.is_converted is None:
-                return resource
-        return None
+        return select_original_resource(self.resources)
+
+    @property
+    def original_move_resource(self) -> Resource | None:
+        """
+        Return the main recording's resource, preferring an endpoint advertised for Move.
+
+        Returns:
+            Resource | None: Move resource, or None when no suitable resource is advertised
+        """
+
+        return select_original_resource(self.resources, for_move=True)
 
 
 class RecordingMetadata(BaseModel):

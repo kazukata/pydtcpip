@@ -8,7 +8,15 @@ from xml.etree import ElementTree as ET
 
 from pydtcpip.dlna.description import DeviceDescription
 from pydtcpip.errors import PyDTCPIPError
-from pydtcpip.models import ChapterResource, ProtectionValue, Recording, ReportedCopyCount, ResourceConversion
+from pydtcpip.models import (
+    ChapterResource,
+    ProtectionValue,
+    Recording,
+    ReportedCopyCount,
+    Resource,
+    ResourceConversion,
+    ResourceVariant,
+)
 
 
 @dataclass(frozen=True)
@@ -61,8 +69,28 @@ class Profile:
     recording_roots: tuple[str, ...] | None = None
     # Interpret resource conversion only when protocolInfo omits DLNA.ORG_CI
     read_resource_conversion: Callable[[ET.Element, ET.Element], ResourceConversion | None] | None = None
+    # Classify separately stored recording versions and dedicated transfer URLs
+    read_resource_variant: Callable[[Resource], ResourceVariant | None] | None = None
     # Decide whether an individual recording still needs its parent listing
     needs_listing_metadata: Callable[[Recording], bool] | None = None
+
+    def resource_variant(self, resource: Resource) -> ResourceVariant | None:
+        """
+        Identify a recording version using family-specific resource metadata.
+
+        Args:
+            resource (Resource): Resource with its original protocol and conversion information
+
+        Returns:
+            ResourceVariant | None: Evidence from the nearest handler, or None when unclassified
+        """
+
+        profile: Profile | None = self
+        while profile is not None:
+            if profile.read_resource_variant is not None:
+                return profile.read_resource_variant(resource)
+            profile = profile.parent
+        return None
 
     def resource_conversion(self, item: ET.Element, resource: ET.Element) -> ResourceConversion | None:
         """

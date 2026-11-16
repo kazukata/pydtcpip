@@ -24,6 +24,7 @@ from pydtcpip.models import (
     ReportedCopyCount,
     Resource,
     ResourceConversion,
+    ResourceVariant,
     TimeRange,
 )
 from pydtcpip.receiver import DubbingReceiver
@@ -64,6 +65,7 @@ __all__ = [
     'ReportedCopyCount',
     'Resource',
     'ResourceConversion',
+    'ResourceVariant',
     'ServiceArgument',
     'ServiceDescription',
     'Sink',
