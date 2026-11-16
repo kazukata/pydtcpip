@@ -1588,11 +1588,12 @@ class PyDTCPIPApp(App[None]):
         return self._is_exit_requested
 
     def _skip_waiting(self) -> None:
-        """Mark entries that have not started as not started when the queue stops."""
+        """Mark entries that have not started as not started when the queue stops, keeping resumptions resumable."""
 
         for item in self._queue:
             if item.status == 'waiting':
-                item.status = 'skipped'
+                # An interrupted Move stays resumable; moving the recording again would consume another copy
+                item.status = 'resume_required' if item.is_resume is True else 'skipped'
         self._refresh_queue()
 
     def action_cancel_transfer(self) -> None:

@@ -777,7 +777,15 @@ async def test_interrupted_move_found_on_disk_blocks_moving_the_recording_again(
         async with app.run_test(size=(200, 50)):
             # Starting the interface scans the destination for interrupted Moves
             entries = app._confirm_entries([Selection(_UDN, recording)], other)  # pyright: ignore[reportPrivateUsage]
-    assert entries[0].excluded == 'previous Move needs resumption or checking'
+            assert entries[0].excluded == 'previous Move needs resumption or checking'
+            # Stopping the queue before a queued resumption starts keeps it resumable instead of skipped
+            item = app._queue[0]  # pyright: ignore[reportPrivateUsage]
+            item.is_resume = True
+            item.status = 'waiting'
+            app._skip_waiting()  # pyright: ignore[reportPrivateUsage]
+            assert item.status == 'resume_required'
+            entries = app._confirm_entries([Selection(_UDN, recording)], other)  # pyright: ignore[reportPrivateUsage]
+            assert entries[0].excluded == 'previous Move needs resumption or checking'
 
 
 @pytest.mark.anyio
