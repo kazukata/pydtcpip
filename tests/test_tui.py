@@ -736,6 +736,35 @@ async def test_filter_opens_with_kana_mode_slash(tmp_path: Path, key: str) -> No
 
 
 @pytest.mark.anyio
+@pytest.mark.usefixtures('credentials')
+async def test_titles_with_brackets_are_shown_verbatim(tmp_path: Path) -> None:
+    """Titles from the recorder are not interpreted as markup in the table, path and dialogs."""
+
+    title = 'AC/DC [/live] [b]Encore'
+    folders = {
+        '0': [didl_container('F1', '0', '[/folder]', 1)],
+        'F1': [_recording('A1', 'F1', title, 'http://192.0.2.1/media')],
+    }
+    async with FakeRecorder(folders) as recorder:
+        async with _launch(recorder, tmp_path, tmp_path / 'device') as (app, _), app.run_test(size=(200, 50)) as pilot:
+            await _wait(pilot.pause, lambda: _table(app).row_count == 1)
+            await pilot.press('enter', 'enter')
+            await _wait(
+                pilot.pause, lambda: _table(app).row_count == 1 and '[/folder]' in str(app.query_one('#path').render())
+            )
+            assert title in str(_table(app).get_row_at(0)[2])
+            await pilot.press('v')
+            await _wait(pilot.pause, lambda: isinstance(app.screen, ResourceScreen))
+            assert title in str(app.screen.query_one('.dialog-title').render())
+            await pilot.press('escape', 'm')
+            await _wait(pilot.pause, lambda: isinstance(app.screen, ConfirmMoveScreen))
+            table = app.screen.query_one('#confirm-table', DataTable)
+            assert title in str(table.get_row_at(0)[0])
+            await pilot.press('escape')
+            assert app.is_running is True
+
+
+@pytest.mark.anyio
 async def test_interrupted_move_found_on_disk_blocks_moving_the_recording_again(tmp_path: Path) -> None:
     """An interrupted Move from an earlier session keeps its recording identity, even for another destination."""
 

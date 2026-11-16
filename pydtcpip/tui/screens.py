@@ -84,7 +84,7 @@ class ChoiceScreen(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(classes='dialog'):
-            yield Label(self._title, classes='dialog-title')
+            yield Label(Text(self._title), classes='dialog-title')
             for text, style in self._body:
                 yield Static(Text(text, style=style), classes='dialog-text')
             with Horizontal(classes='dialog-buttons'):
@@ -177,9 +177,11 @@ class ConfirmMoveScreen(ModalScreen[Path | None]):
         table.clear()
         explanations: dict[str, tuple[str, str, int]] = {}
         for entry in self._entries:
-            saved_as = Text(f'Excluded: {entry.excluded}', style='yellow') if entry.excluded else entry.output_name
+            saved_as = (
+                Text(f'Excluded: {entry.excluded}', style='yellow') if entry.excluded else Text(entry.output_name)
+            )
             labels = Text(', ').join(Text(label, style=style) for label, _, style in entry.warnings)
-            table.add_row(entry.title, entry.quality, entry.size, entry.copies, labels, saved_as)
+            table.add_row(Text(entry.title), Text(entry.quality), entry.size, entry.copies, labels, saved_as)
             if entry.excluded is not None:
                 continue
             for label, explanation, style in entry.warnings:
@@ -250,7 +252,7 @@ class ResourceScreen(ModalScreen[int | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(classes='dialog wide'):
-            yield Label(f'Quality to move: {self._title}', classes='dialog-title')
+            yield Label(Text(f'Quality to move: {self._title}'), classes='dialog-title')
             yield Static(
                 Text(
                     'The original recording is moved by default. Other versions may have lower quality, '
@@ -261,7 +263,7 @@ class ResourceScreen(ModalScreen[int | None]):
             )
             options = [Option('Default: original recording', id='resource-0')]
             options.extend(
-                Option(label, id=f'resource-{index}', disabled=not is_available)
+                Option(Text(label), id=f'resource-{index}', disabled=not is_available)
                 for index, label, is_available in self._options
             )
             yield OptionList(*options, id='resource-list')

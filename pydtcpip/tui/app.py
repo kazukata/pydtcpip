@@ -429,7 +429,7 @@ class PyDTCPIPApp(App[None]):
             servers = await self._dlna.discover(timeout=3.0, interface=self._interface, port=self._search_port)
         except (OSError, PyDTCPIPError) as ex:
             _LOGGER.error(f'Discovery failed: {ex}')
-            self.notify(f'Discovery failed: {ex}', severity='error')
+            self.notify(f'Discovery failed: {ex}', severity='error', markup=False)
             return
         for server in servers:
             self._add_server(server)
@@ -490,10 +490,10 @@ class PyDTCPIPApp(App[None]):
             server = await self._dlna.get_server(url)
         except (OSError, TimeoutError, PyDTCPIPError) as ex:
             _LOGGER.error(f'Could not connect to {url}: {ex}')
-            self.notify(f'Could not connect to {url}: {ex}', severity='error')
+            self.notify(f'Could not connect to {url}: {ex}', severity='error', markup=False)
             return
         self._add_server(server)
-        self.notify(f'Added {server.description.friendly_name}.')
+        self.notify(f'Added {server.description.friendly_name}.', markup=False)
 
     @on(OptionList.OptionHighlighted, '#devices')
     def _device_highlighted(self, event: OptionList.OptionHighlighted) -> None:
@@ -571,7 +571,7 @@ class PyDTCPIPApp(App[None]):
                     break
         except (OSError, TimeoutError, PyDTCPIPError) as ex:
             _LOGGER.error(f'Could not list folder {container_id} on {server.description.friendly_name}: {ex}')
-            self.notify(f'Could not list this folder: {ex}', severity='error')
+            self.notify(f'Could not list this folder: {ex}', severity='error', markup=False)
             return
         finally:
             self._loading.discard(location)
@@ -736,7 +736,7 @@ class PyDTCPIPApp(App[None]):
             quality,
             display.format_size(display.resource_size(resource)),
             display.format_copy_count(item, resource),
-            item.channel_name or '',
+            Text(item.channel_name or ''),
         ]
 
     def _rebuild_table(
@@ -772,7 +772,7 @@ class PyDTCPIPApp(App[None]):
         path = ' / '.join(title for _, title in view.path)
         state = f'  loading {len(objects)} of {total}...' if total is not None and len(objects) < total else ''
         shown = f'  {len(visible)} of {len(self._objects)}' if self._filter else f'  {len(self._objects)} entries'
-        self.query_one('#path', Label).update(f'{path}{shown}{state}')
+        self.query_one('#path', Label).update(Text(f'{path}{shown}{state}'))
         self._update_status()
 
     def _highlighted_key(self) -> str | None:
@@ -1760,10 +1760,10 @@ class PyDTCPIPApp(App[None]):
             )
             cells: list[Text | str] = [
                 status,
-                item.title,
+                Text(item.title),
                 item.progress_text(),
                 copies,
-                item.message or item.output.name,
+                Text(item.message or item.output.name),
             ]
             if key not in self._queue_keys:
                 self._queue_keys[key] = item
