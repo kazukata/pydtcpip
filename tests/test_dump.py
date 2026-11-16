@@ -13,6 +13,20 @@ from pydtcpip.dump import Redactor
 
 _FIXTURE_DIRECTORY = Path(__file__).parent / 'fixtures'
 
+
+def test_sharp_copy_count_and_recording_mode_survive_masking() -> None:
+    """Keep hexadecimal copy counts and recording modes while masking program information."""
+
+    raw = """<DIDL-Lite xmlns:shp="urn:schemas-sharp-co-jp:shp" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <item><dc:title>Private recording</dc:title><shp:ccnum>0x0a</shp:ccnum>
+    <shp:rrate><![CDATA[DR.HD]]></shp:rrate><shp:unknown>Private value</shp:unknown></item></DIDL-Lite>"""
+    masked = ET.fromstring(Redactor().redact_xml(raw, 'didl'))
+    assert masked.findtext('.//{urn:schemas-sharp-co-jp:shp}ccnum') == '0x0a'
+    assert masked.findtext('.//{urn:schemas-sharp-co-jp:shp}rrate') == 'DR.HD'
+    assert masked.findtext('.//{http://purl.org/dc/elements/1.1/}title') == 'redacted'
+    assert masked.findtext('.//{urn:schemas-sharp-co-jp:shp}unknown') == 'redacted'
+
+
 _DESCRIPTION = """<?xml version="1.0"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0"><device>
 <UDN>uuid:12345678-90ab-cdef-1234-a1b2c3d4e5f6</UDN>

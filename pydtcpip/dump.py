@@ -36,6 +36,8 @@ _KEPT_DIDL_TEXTS = frozenset(
         'genreCode',
         'copycount',
         'COGCount',
+        'ccnum',
+        'rrate',
         'playbackState',
         # Broadcast network and service IDs are public and do not identify a program or user
         ## REGZA TVs include regza:network_id and regza:service_id only in BrowseDirectChildren responses
