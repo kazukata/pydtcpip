@@ -34,6 +34,26 @@ DBR-Z620 discards its resume state immediately if the control connection drops a
 
 `dump` saves device responses unchanged by default and requires no credentials. With `--mask-private`, retain known technical values and unknown integers from 0 to 999 without leading zeros, except in fields named as identifiers, credentials, personal data or dates. This integer exception aids compatibility research but does not guarantee anonymity. Replace object IDs and resource URL references consistently, replace embedded identifiers with documentation values, and redact other unknown values, including comments and headers. Apply the same XML value rules to attributes and CDATA. Keep redacted output usable as test fixtures.
 
+## Compatibility report workflow
+
+When handling compatibility reports, read the current issue, comments and supplied diagnostic material, and compare them with the current implementation. First implement and validate applicable improvements supported by the information already provided; request additional information only for unresolved questions that cannot be answered from that material.
+
+Close a report as completed once all actionable findings within the project's scope have been incorporated, including reports establishing that existing behavior already works. Closure means the report has been processed, not that every feature of the device has been verified. Untested operations or fields that the device does not expose are not, by themselves, reasons to keep a report open. Record supported behavior and its verification limits in the compatibility documentation.
+
+As part of this workflow, the maintainer authorizes issue replies mentioning the report author, focused follow-up questions, and closing reports that meet these criteria without asking for approval again. Reply in the language of the issue: Japanese for Japanese reports and English for English reports, unless the reporter requests otherwise. Before closing, briefly explain what was incorporated and what remains unverified. Reuse unanswered questions instead of repeating them. Keep reports open while actionable failures still need investigation; separate independently reproducible failures from an otherwise incorporated report when useful, preserving links and context.
+
+Distinguish client-initiated GET Move from device-initiated push dubbing. For devices without an on-device operation interface, check official product specifications and manuals for other initiation methods, including a web control panel or companion application. Mark push dubbing unsupported when the documented functionality provides no way to initiate it; lack of a physical screen alone is insufficient evidence. Preserve the source and distinguish documented limitations from untested functionality.
+
+## User-facing documentation
+
+Write from the reader's task: deciding whether their device is usable, choosing an operation, and resolving a problem. Before adding a paragraph, identify the decision or action it enables. Include facts because they change that decision or action, not merely because they are accurate or were collected during development.
+
+Keep compatibility tables focused on supported operations and meaningful verification limits. Use surrounding prose for actionable limitations and workarounds. Place durable technical details that help explain or integrate the library in the README's lower technical sections or linked technical documentation. Keep investigation chronology, measurement logs and exhaustive test qualifications in the source issues. A report's availability does not justify reproducing it in the README. Avoid repeating the table in prose.
+
+Describe current behavior directly. Keep version-by-version changes, merged-PR history and statements such as "now supports", "newly added" or "has been fixed" out of the README; use release notes and issue discussions for change history. Mention a version only when it is a current requirement or compatibility boundary that changes the reader's action. Moving historical narration into a technical section does not make it useful documentation.
+
+Preserve limitations that affect usability, data safety or the strength of a compatibility claim, but explain their practical consequence concisely. Do not solve excessive detail by replacing evidence with broader claims or deleting a material limitation. After editing, read the section as a prospective user and remove sentences whose deletion would not change what they can decide or do; summarize the useful conclusion and link the supporting report.
+
 ## Implementation and testing
 
 Use Python 3.13+ and uv. Use aiohttp for HTTP, ElementTree for UPnP XML, Pydantic for models, pydantic-settings for CLI credentials, cryptography and ecdsa for cryptography, and Typer and Rich for the CLI. Use Ruff with single quotes and a 120-character line length, Pyright strict, and pytest with AnyIO's asyncio backend.
