@@ -96,21 +96,25 @@ Details of the implemented specification scope and design principles are summari
 **Family profiles provide the metadata support listed below; transfer results are recorded separately in the table above.**  
 Profiles marked as unverified in the CLI still require hardware validation of their family-specific parsing and optional queries. A successful basic transfer on a model does not verify every feature of its profile.
 
+All profiles retain standard recording metadata, media resource attributes and device-provided extension fields. The table lists additional interpretation and queries; fields and services must be supplied by the device to be available.
+
 | Family | Profile | Metadata support |
 | --- | --- | --- |
-| Panasonic DIGA / VIERA | `panasonic` | Resource copy counts, chapter URLs, Panasonic extension fields and detection of converted resources using URLs and HD/VGA references |
-| Sony BDZ | `sony_bdz` | Copy counts, chapter URLs, recording details, actual recording start and storage information from advertised services |
+| Sony / Buffalo nasne | `nasne` | Copy counts, extended recording details, thumbnails, estimated chapter positions, and identification of DR, three-times and mobile versions and Move resources |
+| Toshiba / TVS REGZA TVs | `toshiba_regza_tv` | Toshiba metadata support below, plus broadcast network and service IDs available only in recording listings |
+| Toshiba / REGZA recorders | `toshiba` | Copy counts, frame rates, chapter queries and USB drive names from recording folders |
+| Panasonic DIGA / VIERA | `panasonic` | Resource copy counts, chapters, recording-mode names, and identification of converted resources from URLs, HD/VGA references and alternative resource elements |
+| Sony BDZ | `sony_bdz` | Copy counts, chapters, recording details, actual recording start, storage information and identification of main and mobile recording versions |
 | Sony PC TV Plus | `sony_pctv` | Copy counts from Sony metadata |
-| Sharp AQUOS | `sharp` | Copy counts, chapter URLs and Sharp extension fields |
-| I-O DATA REC-ON | `recon` | Resource copy counts and chapters through an advertised tag action |
-| I-O DATA RECBOX | `recbox` | Recorder-specific copy-count fields and chapter references retained by the server |
-| Buffalo LinkStation | `linkstation` | Recorder-specific copy-count fields and chapter references retained by the server |
+| Sharp AQUOS | `sharp` | Copy counts and chapters; recording-mode and other Sharp fields retained as extension metadata |
+| I-O DATA REC-ON | `recon` | Resource copy counts, chapters through an advertised tag action and recording details from compatible services |
+| I-O DATA RECBOX | `recbox` | Sony, Toshiba, Sharp and Panasonic copy counts, plus Sony, Sharp and Panasonic chapters retained by the server |
+| Buffalo LinkStation | `linkstation` | Sony, Toshiba, Sharp and Panasonic copy counts, plus Sony, Sharp and Panasonic chapters retained by the server |
 | Cable / satellite set-top boxes | `stb` | Resource copy counts, advertised chapter tags and compatible recording-detail services |
 | Compatible Hikari TV boxes | `stb_hikaritv` | Set-top box metadata and the dedicated recording container |
 | STW2000 | `stb_stw2000` | Set-top box metadata and the STW2000 recording container |
 | AM900 | `stb_am900` | Set-top box metadata and the AM900 recording container |
-
-Toshiba profiles support copy counts and chapter queries. The nasne profile supports recording details and estimated chapter positions.
+| Standard DLNA servers | `generic` | Standard recording and resource metadata, with device-provided extension fields retained without family-specific interpretation |
 
 > [!IMPORTANT]  
 > **DTCP-IP itself is a standard that defines mutual authentication and encrypted transfer, while recording listings and protection information are exchanged through DLNA / UPnP at the preceding stage.**  
