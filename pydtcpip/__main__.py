@@ -8,7 +8,6 @@ import sys
 from collections.abc import Coroutine
 from datetime import UTC, datetime
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Annotated
 
 import aiohttp
@@ -63,6 +62,21 @@ from pydtcpip.models import (
     Resource,
     TimeRange,
 )
+from pydtcpip.operations import (
+    ResourceSelectionError,
+    collect_move_metadata,
+    existing_move_outputs,
+    is_broadcast,
+    load_resume_sidecar,
+    load_resume_state,
+    query_copy_count,
+    resume_state_path,
+    run_move,
+    run_resume,
+    sanitize_title,
+    select_resource,
+)
+from pydtcpip.operations import save_resume_state as save_move_resume_state
 from pydtcpip.receiver import DubbingReceiver
 from pydtcpip.sinks import FileSink
 from pydtcpip.store import DeviceStore
@@ -160,38 +174,6 @@ def _load_credentials(path: Path | None) -> DeviceCredentials:
         raise typer.Exit(1) from ex
 
 
-def _write_private_file(path: Path, data: bytes) -> None:
-    """
-    Replace a file after writing it with owner-only read and write permissions.
-
-    Args:
-        path (Path): Destination file
-        data (bytes): Contents to persist
-    """
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile(dir=path.parent, delete=False) as file:
-        os.chmod(file.name, 0o600)
-        file.write(data)
-        file.flush()
-        os.fsync(file.fileno())
-    os.replace(file.name, path)
-
-
-def _resume_state_path(output: Path) -> Path:
-    """
-    Derive the resume-state path for a Move destination.
-
-    Args:
-        output (Path): Recording destination
-
-    Returns:
-        Path: Adjacent resume-state file
-    """
-
-    return output.with_name(f'{output.name}.pydtcpip-resume.json')
-
-
 def _dubbing_output_path(directory: Path, recording: Recording) -> Path:
     """
     Choose the incoming recording destination from the item ID prefix and title.
@@ -204,10 +186,7 @@ def _dubbing_output_path(directory: Path, recording: Recording) -> Path:
         Path: Destination for the recording
     """
 
-    title = recording.title.translate(str.maketrans(dict.fromkeys('/\\:*?"<>|\r\n\t', '_')))
-    # Truncate long titles, including Japanese titles, so the filename stays under 255 bytes
-    title = title.encode('utf-8')[:200].decode('utf-8', errors='ignore').rstrip(' .') or 'recording'
-    return directory / f'{recording.id[:8]}-{title}.m2ts'
+    return directory / f'{recording.id[:8]}-{sanitize_title(recording.title)}.m2ts'
 
 
 def _format_protection(value: ProtectionValue[int] | ProtectionValue[bool]) -> str:
@@ -369,7 +348,7 @@ async def _select_recording(server: MediaServer, object_id: str | None) -> Recor
             else:
                 table.add_row(
                     str(index),
-                    'Channel' if _is_broadcast(item) is True else 'Recording',
+                    'Channel' if is_broadcast(item) is True else 'Recording',
                     item.title,
                     item.date or '',
                     _format_recording_copy_count(item),
@@ -380,21 +359,6 @@ async def _select_recording(server: MediaServer, object_id: str | None) -> Recor
         if isinstance(selected, Recording):
             return selected
         container_id = selected.id
-
-
-def _is_broadcast(recording: Recording) -> bool:
-    """
-    Determine whether an item is a live channel rather than a recording.
-
-    Args:
-        recording (Recording): Item to inspect
-
-    Returns:
-        bool: True for a live channel
-    """
-
-    # DBR-Z620 lists live channels as videoBroadcast items in the LIVE_TUNER folder
-    return recording.upnp_class.startswith('object.item.videoItem.videoBroadcast')
 
 
 def _choose_resource(recording: Recording, *, for_move: bool = False, resource_index: int | None = None) -> Resource:
@@ -410,25 +374,11 @@ def _choose_resource(recording: Recording, *, for_move: bool = False, resource_i
         Resource: Selected DTCP-IP resource
     """
 
-    if resource_index is not None:
-        if resource_index > len(recording.resources):
-            console.print(f'[red]Resource {resource_index} is not advertised for this recording.[/red]')
-            raise typer.Exit(1)
-        resource = recording.resources[resource_index - 1]
-        if resource.protocol_info.is_dtcp is False:
-            console.print('[red]The selected resource does not use DTCP-IP.[/red]')
-            raise typer.Exit(1)
-        if for_move is False and resource.variant is not None and resource.variant.is_move_only is True:
-            console.print('[red]The selected resource is available only for Move.[/red]')
-            raise typer.Exit(1)
-    else:
-        resource = recording.original_move_resource if for_move is True else recording.original_resource
-    if resource is None:
-        console.print(
-            '[red]This recording has no original-quality DTCP-IP resource for this operation. '
-            'Use info to inspect the available qualities, then select one with --resource or its URL.[/red]'
-        )
-        raise typer.Exit(1)
+    try:
+        resource = select_resource(recording, for_move=for_move, resource_index=resource_index)
+    except ResourceSelectionError as ex:
+        console.print(f'[red]{ex}[/red]')
+        raise typer.Exit(1) from ex
     if resource.is_original_quality is None:
         console.print(
             '[yellow]The recorder does not identify whether the selected resource is the original recording.[/yellow]'
@@ -712,21 +662,6 @@ def _new_progress() -> Progress:
     )
 
 
-def _save_resume_state(path: Path, state: MoveResumeState | None) -> None:
-    """
-    Save Move resume state with owner-only read permission, or delete it when the Move completes.
-
-    Args:
-        path (Path): Resume-state file
-        state (MoveResumeState | None): State to save, or None to remove the file
-    """
-
-    if state is None:
-        path.unlink(missing_ok=True)
-        return
-    _write_private_file(path, state.model_dump_json().encode('utf-8'))
-
-
 def _print_commitment_rejected(error: MoveCommitmentRejectedError, output: Path) -> None:
     """
     Explain what happened to received data when the source rejects finalization.
@@ -968,10 +903,8 @@ def move(
     if url is not None and resource_index is not None:
         raise typer.BadParameter('Use --resource with a recorder and recording, or supply a URL, separately.')
     device_credentials = _load_credentials(credentials)
-    resume_path = _resume_state_path(output)
-    metadata_path = output.with_suffix('.xml')
-    json_metadata_path = output.with_suffix('.metadata.json')
-    if output.exists() or resume_path.exists() or metadata_path.exists() or json_metadata_path.exists():
+    resume_path = resume_state_path(output)
+    if existing_move_outputs(output):
         console.print(
             f'[red]The output, metadata sidecar, or previous Move resume state already exists: {output}[/red]'
         )
@@ -992,7 +925,7 @@ def move(
             else:
                 media_server = await _select_server(dlna, server)
                 recording = await _select_recording(media_server, object_id)
-                if _is_broadcast(recording) is True:
+                if is_broadcast(recording) is True:
                     console.print(f'[red]{recording.title} is a live channel and cannot be moved.[/red]')
                     raise typer.Exit(1)
                 target = _choose_resource(recording, for_move=True, resource_index=resource_index)
@@ -1032,23 +965,19 @@ def move(
             sidecar: MetadataSidecar | None = None
             if recording is not None and media_server is not None:
                 with console.status('Fetching recording metadata...'):
-                    metadata = await media_server.collect_metadata(recording)
+                    metadata, sidecar = await collect_move_metadata(media_server, recording, output)
                 _print_additional_metadata(metadata)
-                sidecar = MetadataSidecar(output, metadata)
 
-            sink = FileSink(output)
             try:
                 with _new_progress() as progress:
-                    written = await client.move(
+                    written = await run_move(
+                        client,
                         target,
-                        sink,
-                        on_resume_state=lambda state: _save_resume_state(resume_path, state),
-                        on_event=ProgressReporter(progress, 'Move', sidecar),
+                        output,
+                        media_server=media_server,
+                        sidecar=sidecar,
+                        on_event=ProgressReporter(progress, 'Move'),
                     )
-            except DLNAError as ex:
-                if media_server is not None:
-                    raise media_server.interpret_http_error(ex, str(target)) from ex
-                raise
             except MoveCommitmentRejectedError as ex:
                 _print_commitment_rejected(ex, output)
                 raise typer.Exit(1) from ex
@@ -1090,21 +1019,13 @@ async def _requery_copy_count(
         for _ in range(_COPY_COUNT_REQUERY_ATTEMPTS):
             await asyncio.sleep(_COPY_COUNT_REQUERY_INTERVAL)
             try:
-                item = await media_server.get_metadata(recording.id)
+                after = await query_copy_count(media_server, recording, resource_url)
             except DLNAError:
                 # A recording with no copies remaining is deleted from the source and cannot be queried
                 console.print('Could not query the source recording; it may have been deleted.')
                 return
-            if isinstance(item, Container):
+            if after is None:
                 return
-            selected = next((resource for resource in item.resources if resource.url == resource_url), None)
-            after = (
-                item.copy_count_for(selected)
-                if selected is not None
-                else item.protection.remaining_copy_count
-                if resource_url is None
-                else ProtectionValue[int](status='omitted', source='metadata')
-            )
             if (after.status, after.value) != (before.status, before.value):
                 console.print(f'Source copies remaining: {_format_protection(before)} -> {_format_protection(after)}')
                 return
@@ -1121,41 +1042,25 @@ def resume(
 
     _setup_logging(verbose)
     device_credentials = _load_credentials(credentials)
-    resume_path = _resume_state_path(output)
+    resume_path = resume_state_path(output)
     if resume_path.exists() is False:
         console.print(f'[red]Move resume state not found: {resume_path}[/red]')
         raise typer.Exit(1)
     try:
-        resume_state = MoveResumeState.model_validate_json(resume_path.read_text(encoding='utf-8'))
+        resume_state = load_resume_state(output)
     except (ValidationError, OSError) as ex:
         console.print(f'[red]Could not load Move resume state: {resume_path} ({ex})[/red]')
         raise typer.Exit(1) from ex
-
-    # Optional metadata must not prevent recovery after the source may have consumed a copy
-    sidecar: MetadataSidecar | None = None
-    try:
-        sidecar = MetadataSidecar.resume(output)
-    except (ValidationError, OSError) as ex:
-        _LOGGER.warning(
-            f'Could not load recording metadata beside {output}; continuing Move recovery without metadata updates.',
-            exc_info=ex,
-        )
+    sidecar = load_resume_sidecar(output)
 
     async def main() -> None:
-        # If finalization was verified and data is already in place, retry only the completion notification
-        sink: FileSink | None = None
-        if resume_state.state == 'finalizing' or FileSink(output).pending_path.exists() is True:
-            sink = FileSink.resume(output)
         async with DTCPClient(
             device_credentials, srm=_device_store.load_srm(), on_srm_update=_device_store.save_srm
         ) as client:
             try:
                 with _new_progress() as progress:
-                    written = await client.resume_move(
-                        resume_state,
-                        sink,
-                        on_resume_state=lambda state: _save_resume_state(resume_path, state),
-                        on_event=ProgressReporter(progress, 'Move', sidecar),
+                    written = await run_resume(
+                        client, output, resume_state, sidecar=sidecar, on_event=ProgressReporter(progress, 'Move')
                     )
             except MoveCommitmentRejectedError as ex:
                 _print_commitment_rejected(ex, output)
@@ -1230,7 +1135,7 @@ def receive(
 
     def save_resume_state(recording: Recording, state: MoveResumeState | None) -> None:
         # Save resume state beside the output, as in move, so `pydtcpip resume <output>` can resume finalization
-        _save_resume_state(_resume_state_path(_dubbing_output_path(directory, recording)), state)
+        save_move_resume_state(resume_state_path(_dubbing_output_path(directory, recording)), state)
 
     progress = _new_progress()
     reporter = ProgressReporter(progress, 'Receiving')
