@@ -333,6 +333,42 @@ class MetadataSource:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize('model', ['PC TV Plus', 'Sony-BDZ', 'Example Server'])
+async def test_pctv_browse_closes_connections_and_reads_copy_counts(model: str) -> None:
+    """Exercise successive Browse requests without changing connection reuse for other servers."""
+
+    transports: list[asyncio.Transport] = []
+
+    class ConnectionSource(MetadataSource):
+        async def handle(self, request: web.Request) -> web.Response:
+            if request.method == 'POST':
+                transport = request.transport
+                assert transport is not None
+                if model == 'PC TV Plus' and transport in transports:
+                    transport.close()
+                    return web.Response()
+                transports.append(transport)
+            return await super().handle(request)
+
+    source = ConnectionSource('Sony Corporation', model, recording_xml('<av:COGCount>1</av:COGCount>'))
+    async with source.serve() as (location, _), DLNAClient() as client:
+        server = await client.get_server(location)
+        for _ in range(3):
+            result = await server.browse()
+            recording = result.objects[0]
+            assert isinstance(recording, Recording)
+            count = recording.protection.remaining_copy_count
+            assert count.status == ('unsupported' if model == 'Example Server' else 'known')
+            assert count.value == (None if model == 'Example Server' else 0)
+        assert (
+            server.profile.name
+            == {'PC TV Plus': 'sony_pctv', 'Sony-BDZ': 'sony_bdz', 'Example Server': 'generic'}[model]
+        )
+    assert len(transports) == 3
+    assert len(set(transports)) == (3 if model == 'PC TV Plus' else 1)
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize('count', ['10', '1', 'CF', '-1', None])
 async def test_cli_panasonic_fetches_parent_only_for_missing_copy_count(count: str | None) -> None:
     """Known counts avoid a full folder scan, while omitted counts retain the listing fallback."""

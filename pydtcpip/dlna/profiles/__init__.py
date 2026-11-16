@@ -12,6 +12,7 @@ from pydtcpip.dlna.profiles.recbox import RECBOX
 from pydtcpip.dlna.profiles.recon import RECON
 from pydtcpip.dlna.profiles.sharp import SHARP
 from pydtcpip.dlna.profiles.sony_bdz import SONY_BDZ
+from pydtcpip.dlna.profiles.sony_pctv import SONY_PCTV
 from pydtcpip.dlna.profiles.stb import STB
 from pydtcpip.dlna.profiles.stb_am900 import STB_AM900
 from pydtcpip.dlna.profiles.stb_hikaritv import STB_HIKARITV
@@ -29,6 +30,7 @@ PROFILES: tuple[Profile, ...] = (
     TOSHIBA_REGZA_TV,
     NASNE,
     SONY_BDZ,
+    SONY_PCTV,
     PANASONIC,
     SHARP,
     RECON,
