@@ -27,10 +27,11 @@ pydtcpip is a foundation library for recovering broadcast recordings from aging 
   - [1. Preparing credentials](#1-preparing-credentials)
   - [2. Checking recording devices and program information](#2-checking-recording-devices-and-program-information)
   - [3. Saving recordings from a PC through Move transfers](#3-saving-recordings-from-a-pc-through-move-transfers)
-  - [4. Receiving recordings as a dubbing destination](#4-receiving-recordings-as-a-dubbing-destination)
+  - [4. Browsing recorders and moving recordings interactively](#4-browsing-recorders-and-moving-recordings-interactively)
   - [5. Streaming playback](#5-streaming-playback)
-  - [6. Running without interaction](#6-running-without-interaction)
-  - [7. Firewall and network settings](#7-firewall-and-network-settings)
+  - [6. Receiving recordings as a dubbing destination](#6-receiving-recordings-as-a-dubbing-destination)
+  - [7. Running without interaction](#7-running-without-interaction)
+  - [8. Firewall and network settings](#8-firewall-and-network-settings)
 - [Using pydtcpip as a Python library](#using-pydtcpip-as-a-python-library)
 - [Received data format and metadata](#received-data-format-and-metadata)
 - [Device-specific behavior and contributing to compatibility](#device-specific-behavior-and-contributing-to-compatibility)
@@ -53,8 +54,9 @@ pydtcpip is a foundation library for recovering broadcast recordings from aging 
 - **Asynchronous Python library (`DLNAClient`, `DTCPClient`, `DubbingReceiver`)**: DTCP-IP reception can be integrated into any Python application through Pydantic models and type-safe events
 - **Home device discovery and metadata retrieval**: Discovery of recording devices (DLNA media servers) through SSDP, and retrieval of program information and copy control information by browsing directories (reference CLI implementation: `discover` / `info`)
 - **Client-initiated Move transfers (copying and moving under Dubbing 10 (ダビング10))**: Implements mutual authentication, decryption, finalization (`FINALIZE`) after persisting the destination data, and completion (`COMPLETE`), with the ability to resume finalization alone after a disconnection without receiving the data again (`move` / `resume`)
-- **Listening for incoming dubbing transfers as a DTCP-IP-compatible NAS**: Reception of recordings and program information from TVs and recorders that have no streaming functionality and only support push dubbing started from the device's own menu (送り出しダビング) (`receive`)
+- **Interactive interface combining discovery, program information and Move transfers**: The functions of `discover`, `info`, `move` and `resume` on one screen, showing recorders, folders, program information, qualities, sizes and copy counts side by side and moving several selected recordings in sequence (`tui`)
 - **Streaming reception without consuming the copy count**: Data delivery with backpressure control through asynchronous callbacks, and transfer to FFplay or similar tools through standard output (`stream`)
+- **Listening for incoming dubbing transfers as a DTCP-IP-compatible NAS**: Reception of recordings and program information from TVs and recorders that have no streaming functionality and only support push dubbing started from the device's own menu (送り出しダビング) (`receive`)
 - **Diagnostic data export**: Export of protocol responses from unsupported models with identifying information and program titles masked for issue reports (`dump --mask-private`)
 
 Transfers select the main recording in its stored quality, using `DLNA.ORG_CI` and family-specific metadata to distinguish it from converted and mobile versions. An AVC or nasne three-times recording is transferred in that recorded format; original quality does not require DR mode. Dedicated Move resources are preferred for dubbing and excluded from streaming selection, including explicit selection with `--resource`.
@@ -137,7 +139,7 @@ To develop or run it from source, run `uv sync` in the repository, then launch i
 
 pydtcpip itself is an asynchronous Python library for integration into applications.  
 The bundled `pydtcpip` command was developed as a reference implementation for operation checks and research, with the aim of checking connectivity to real devices and validating the protocol.  
-It implements the functions needed to transfer recorded data, including an interactive program selection screen (TUI), a progress bar showing transfer progress, and a resume function for interrupted transfers.
+It implements the functions needed to transfer recorded data, including an interactive interface that combines device discovery, program information and Move transfers, a progress bar showing transfer progress, and a resume function for interrupted transfers.
 
 ### 1. Preparing credentials
 
@@ -270,7 +272,77 @@ If the transfer is interrupted before finalization is requested, the Move is can
 > In that case, pydtcpip deletes the resume information and saves the received video in `.recording.m2ts.part`.  
 > If the source's remaining copy count has decreased or the recording has been deleted, the Move has already been finalized on the source.
 
-### 4. Receiving recordings as a dubbing destination
+### 4. Browsing recorders and moving recordings interactively
+
+**The `tui` subcommand provides the functions of `discover`, `info`, `move` and `resume` together in an interactive interface.**  
+Recorders found on the network appear on the left, the folders and recordings of the selected recorder in the middle, and details of the highlighted recording on the right.  
+Streaming (`stream`), receiving push dubbing (`receive`) and diagnostic exports (`dump`) are not part of the interface; use those subcommands directly.
+
+```bash
+# Save moved recordings in the current directory
+$ pydtcpip tui
+# Save moved recordings in another directory
+$ pydtcpip tui ~/Videos
+```
+
+The recording table shows the date, length, quality, size and remaining copies of each recording, using the resource that a Move would transfer.  
+Sizes marked `~` are estimated from the advertised bitrate and duration, and sizes marked `*` are the encrypted transfer size because the device did not report the saved size.  
+When the cursor rests on a recording, the details pane also shows every advertised quality, chapters and additional program information from the device.
+
+| Key | Action |
+| --- | --- |
+| `Enter` / `Backspace` | Open the highlighted recorder or folder / return to the parent folder |
+| `Space` / `a` | Select or deselect the highlighted recording / every recording in the folder |
+| `v` | Choose another quality for the highlighted recording (the stored recording is used by default) |
+| `m` | Review and move the selected recordings |
+| `/` / `s` | Filter titles in the folder / change the sort order |
+| `c` | Cancel the active transfer before finalization |
+| `+` | Add a recorder by its device description URL when discovery does not find it |
+| `l` / `q` | Show the log / quit |
+
+The Transfer column shows recordings queued during the session as Queued, Moving, Done, Resume! (finalization must be resumed), Check (the source rejected finalization), Failed or Stopped.  
+To filter while a Japanese input method is in kana mode, `・` and `／` also open the title filter.
+
+The mouse works as in htop: a click moves the cursor, a double click opens or selects the row, the wheel moves the cursor, and clicking a column heading sorts by that column.
+
+`m` opens a confirmation listing each recording with its copy count, size and destination file, together with warnings for recordings that only have the final Move left, unknown copy counts and versions other than the stored recording.  
+Recordings are saved as `<title>-<identifier>.m2ts` in the directory given to `tui`, which can also be changed on the confirmation screen, with the same XML and JSON metadata files as the `move` subcommand, and are transferred one at a time.  
+Recordings whose destination files already exist are excluded, and a recording listed in several folders is moved only once.
+
+> [!WARNING]  
+> **Each Move consumes one copy from the source, and a recording with only the final Move left, or one that prohibits copying, is deleted from the source.**  
+> Check the warnings on the confirmation screen before starting.
+
+If a Move does not complete, the queue stops and explains whether the source may have consumed a copy.  
+A Move interrupted after finalization was requested appears in the transfer list as requiring resumption; press `Enter` on it to finalize without receiving the recording again.  
+Quitting during finalization waits until it finishes, and quitting during reception asks before cancelling the transfer, which keeps the copy on the source.
+
+The interface needs a terminal. For scripts and other non-interactive use, use the subcommands.
+
+### 5. Streaming playback
+
+**The `stream` subcommand provides functionality equivalent to recorded program streaming playback in DTCP-IP-compatible remote viewing applications. It decrypts the MPEG-2 TS stream sent by the recording device as it arrives and writes it to standard output.**  
+Because logs, progress bars, and selection screens are all written to standard error, you can pipe the stream to an external MPEG2-TS-compatible player such as FFplay for streaming playback.
+
+The following command is an example of streaming a program selected interactively on the recorder, using FFplay for deinterlacing and libaribcaption to display subtitles in [ARIB STD-B24](https://www.arib.or.jp/kikaku/kikaku_hoso/desc/std-b24.html) format (ARIB subtitles).  
+
+```bash
+$ pydtcpip stream | ffplay -loglevel panic -nostats -autoexit \
+  -vf 'yadif=mode=send_field:parity=auto:deint=interlaced' \
+  -scodec libaribcaption -sub_type bitmap \
+  -i pipe:0
+```
+
+> [!NOTE]  
+> The FFmpeg / FFplay packages provided by Linux distributions may not include [libaribcaption](https://github.com/xqq/libaribcaption), which is required to display ARIB subtitles.  
+> [FFmpeg-Builds](https://github.com/FFmpeg-Builds/FFmpeg-Builds) distributes FFmpeg builds that include libaribcaption, so we recommend using those builds.
+
+> [!TIP]  
+> You can specify the time range to receive in milliseconds with the `--start-ms` and `--end-ms` options.  
+> This functionality is primarily provided for implementing seeking when using the library, but it is also available through the CLI.  
+> The range returned by the device may extend before or after the specified positions, and the decoder may produce warnings at the first and last frame boundaries.
+
+### 6. Receiving recordings as a dubbing destination
 
 **For recording devices that only support push dubbing from their own menus, you can receive recorded data by using the `receive` subcommand to have the PC listen as a DTCP-IP-compatible NAS (DTCP-IP-compatible DLNA server).**
 
@@ -301,32 +373,9 @@ Once the server starts, use the recording device's remote control to select the 
 > **As with the `move` subcommand, dubbing consumes one copy from the source's copy count.**  
 > For recordings with no copies remaining and only a final move available, or recordings such as Copy Once recordings that prohibit further copying and permit only a move, this operation deletes the source recording, and it cannot be restored. Please exercise sufficient caution.
 
-### 5. Streaming playback
+### 7. Running without interaction
 
-**The `stream` subcommand provides functionality equivalent to recorded program streaming playback in DTCP-IP-compatible remote viewing applications. It decrypts the MPEG-2 TS stream sent by the recording device as it arrives and writes it to standard output.**  
-Because logs, progress bars, and selection screens are all written to standard error, you can pipe the stream to an external MPEG2-TS-compatible player such as FFplay for streaming playback.
-
-The following command is an example of streaming a program on the recorder selected through the TUI, using FFplay for deinterlacing and libaribcaption to display subtitles in [ARIB STD-B24](https://www.arib.or.jp/kikaku/kikaku_hoso/desc/std-b24.html) format (ARIB subtitles).  
-
-```bash
-$ pydtcpip stream | ffplay -loglevel panic -nostats -autoexit \
-  -vf 'yadif=mode=send_field:parity=auto:deint=interlaced' \
-  -scodec libaribcaption -sub_type bitmap \
-  -i pipe:0
-```
-
-> [!NOTE]  
-> The FFmpeg / FFplay packages provided by Linux distributions may not include [libaribcaption](https://github.com/xqq/libaribcaption), which is required to display ARIB subtitles.  
-> [FFmpeg-Builds](https://github.com/FFmpeg-Builds/FFmpeg-Builds) distributes FFmpeg builds that include libaribcaption, so we recommend using those builds.
-
-> [!TIP]  
-> You can specify the time range to receive in milliseconds with the `--start-ms` and `--end-ms` options.  
-> This functionality is primarily provided for implementing seeking when using the library, but it is also available through the CLI.  
-> The range returned by the device may extend before or after the specified positions, and the decoder may produce warnings at the first and last frame boundaries.
-
-### 6. Running without interaction
-
-For batch execution and similar uses, you can skip interactive TUI selection by specifying the URL of the recording device's DTCP-IP-compatible DLNA server with `--server` (`-s`) and the recording ID with `--id`.
+For batch execution and similar uses, you can skip interactive selection by specifying the URL of the recording device's DTCP-IP-compatible DLNA server with `--server` (`-s`) and the recording ID with `--id`.
 
 Interaction is also skipped when standard input is not a terminal, but we recommend specifying `--server` explicitly for automated execution to avoid selecting the wrong device.  
 To also skip the confirmation before the `move` subcommand runs, add `--yes` (`-y`).
@@ -355,7 +404,7 @@ $ pydtcpip stream --server http://192.0.2.20:5000/description.xml --id RECORDING
 > Use either `--resource N` with a recording or a direct URL; combining them is an error.
 > When you specify a URL directly, the DLNA recording listing is not retrieved, so program metadata sidecars and the remaining copy count from metadata are unavailable.  
 
-### 7. Firewall and network settings
+### 8. Firewall and network settings
 
 Unicast discovery responses use UDP port 57000, while listening for incoming dubbing transfers uses UDP port 1900 and TCP port 57000.  
 If your firewall is enabled, allow incoming traffic from your home network (adjust the address range to match your home environment).
