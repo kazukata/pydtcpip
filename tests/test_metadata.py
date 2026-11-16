@@ -490,6 +490,20 @@ async def test_sony_descriptions_reach_cli_and_archive(encoding: str, tmp_path: 
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(('format', 'document'), _CHAPTER_CASES[:3])
+async def test_chapter_document_format_is_independent_of_reference_field(format: ChapterFormat, document: str) -> None:
+    # A storage server can retain a chapter URL while serving another recorder's document format
+    source = MetadataSource('I-O DATA', 'RECBOX', recording_xml('<av:chapterInfo>/chapters</av:chapterInfo>'), document)
+    async with source.serve() as (location, _), DLNAClient() as dlna:
+        server = await dlna.get_server(location)
+        recording = await server.get_metadata('V_42')
+        assert isinstance(recording, Recording)
+        chapters = await server.get_chapters(recording)
+    assert [chapter.position_ms for chapter in chapters.chapters] == [12345]
+    assert chapters.raw_responses == (document.encode('utf-8'),)
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize('is_embedded', [True, False])
 async def test_sony_start_fields_without_document_wrapper(is_embedded: bool) -> None:
     source = MetadataSource('Sony', 'BDZ-TEST', recording_xml().replace(' refID="42"', ''))

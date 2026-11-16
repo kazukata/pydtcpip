@@ -20,7 +20,7 @@ def parse_chapters(raw_xml: bytes | str, format: ChapterFormat) -> tuple[Chapter
 
     Args:
         raw_xml (bytes | str): Chapter document
-        format (ChapterFormat): Format selected by the family or reference
+        format (ChapterFormat): SOAP format or URL reference hint; recognizable URL documents take precedence
 
     Returns:
         tuple[Chapter, ...]: Chapter points in document order
@@ -30,6 +30,15 @@ def parse_chapters(raw_xml: bytes | str, format: ChapterFormat) -> tuple[Chapter
         root = ET.fromstring(raw_xml)
     except ET.ParseError as ex:
         raise DLNAError('Could not parse the chapter document XML.') from ex
+    # A server may retain another recorder's chapter reference while serving a different XML format
+    # SOAP actions have their own fixed response structures
+    if format in ('sony', 'panasonic', 'sharp'):
+        if root.find('{urn:schemas-sony-com:av}content_chapter_info') is not None:
+            format = 'sony'
+        elif root.find('chapterList') is not None:
+            format = 'panasonic'
+        elif root.tag == 'chapterList' or root.find('chapter') is not None:
+            format = 'sharp'
     namespace = root.tag.partition('}')[0] + '}' if root.tag.startswith('{') else ''
     container: ET.Element | None = root
     point_name: str | None = None
