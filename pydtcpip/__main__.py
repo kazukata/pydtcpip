@@ -800,84 +800,6 @@ def info(
 
 
 @app.command()
-def stream(
-    url: Annotated[str | None, typer.Argument(help='Resource URL (select a recorder and recording if omitted)')] = None,
-    server: ServerOption = None,
-    object_id: Annotated[str | None, typer.Option('--id', help='Recording ID')] = None,
-    resource_index: Annotated[
-        int | None, typer.Option('--resource', min=1, help='Resource number shown by info (default: stored recording)')
-    ] = None,
-    start_ms: Annotated[int | None, typer.Option(help='Start position in milliseconds')] = None,
-    end_ms: Annotated[int | None, typer.Option(help='End position in milliseconds')] = None,
-    credentials: CredentialsOption = None,
-    verbose: VerboseOption = False,
-) -> None:
-    """Stream media to an external player through standard output."""
-
-    _setup_logging(verbose)
-    if url is not None and resource_index is not None:
-        raise typer.BadParameter('Use --resource with a recorder and recording, or supply a URL, separately.')
-    device_credentials = _load_credentials(credentials)
-    time_range: TimeRange | None = None
-    if start_ms is not None or end_ms is not None:
-        # Start at the beginning when only an end position is specified
-        try:
-            time_range = TimeRange(start_ms=start_ms or 0, end_ms=end_ms)
-        except ValidationError as ex:
-            console.print('[red]The time range must start at or after zero and end at or after the start.[/red]')
-            raise typer.Exit(1) from ex
-
-    async def main() -> None:
-        media_server: MediaServer | None = None
-        async with (
-            DLNAClient() as dlna,
-            DTCPClient(
-                device_credentials, srm=_device_store.load_srm(), on_srm_update=_device_store.save_srm
-            ) as client,
-        ):
-            target: Resource | str
-            if url is not None:
-                target = url
-            else:
-                media_server = await _select_server(dlna, server)
-                target = _choose_resource(
-                    await _select_recording(media_server, object_id), resource_index=resource_index
-                )
-
-            stream_file = sys.stdout.buffer
-
-            async def on_data(chunk: bytes) -> None:
-                await asyncio.to_thread(stream_file.write, chunk)
-
-            is_output_closed = False
-            written = 0
-            try:
-                with _new_progress() as progress:
-                    written = await client.stream(
-                        target, on_data, time_range=time_range, on_event=ProgressReporter(progress, 'Receiving')
-                    )
-            except BrokenPipeError:
-                # Stop normally if the stdout reader (such as ffplay) exits first
-                is_output_closed = True
-                # Redirect stdout to the null device to avoid another exception during the final flush
-                devnull = os.open(os.devnull, os.O_WRONLY)
-                os.dup2(devnull, sys.stdout.fileno())
-                os.close(devnull)
-            except DLNAError as ex:
-                if media_server is not None:
-                    raise media_server.interpret_http_error(ex, str(target)) from ex
-                raise
-            finally:
-                stream_file.flush()
-            if is_output_closed is True:
-                console.print('Stopped receiving because the output was closed.')
-                return
-            console.print(f'Received {written} bytes.')
-
-    _execute(main())
-
-
-@app.command()
 def move(
     output: Annotated[Path, typer.Argument(help='Output file')],
     url: Annotated[
@@ -1068,6 +990,118 @@ def resume(
         console.print(f'Move completed: {output} ({written} bytes)')
 
     _execute(main(), resume_path=resume_path)
+
+
+@app.command()
+def tui(
+    output_dir: Annotated[
+        Path | None,
+        typer.Argument(help='Directory for recordings saved by Move (defaults to the current directory)'),
+    ] = None,
+) -> None:
+    """Browse recorders and move several recordings in an interactive terminal interface."""
+
+    directory = (output_dir if output_dir is not None else Path.cwd()).expanduser()
+    if directory.is_dir() is False:
+        console.print(f'[red]Output directory not found: {directory}[/red]')
+        raise typer.Exit(1)
+    if sys.stdin.isatty() is False or sys.stdout.isatty() is False:
+        console.print('[red]The interactive interface requires a terminal. Use discover, info and move instead.[/red]')
+        raise typer.Exit(1)
+    # Import the interface only when it starts so other commands do not load Textual
+    from pydtcpip.tui import run
+
+    interface = _search_settings['interface']
+    port = _search_settings['port']
+    outputs = run(
+        _device_store,
+        interface=interface if isinstance(interface, str) else None,
+        search_port=port if isinstance(port, int) else 0,
+        directory=directory,
+    )
+    for output in outputs:
+        console.print(
+            f'[yellow]A Move still requires finalization. Once connectivity is restored, run '
+            f'`pydtcpip resume {output}`.[/yellow]'
+        )
+
+
+@app.command()
+def stream(
+    url: Annotated[str | None, typer.Argument(help='Resource URL (select a recorder and recording if omitted)')] = None,
+    server: ServerOption = None,
+    object_id: Annotated[str | None, typer.Option('--id', help='Recording ID')] = None,
+    resource_index: Annotated[
+        int | None, typer.Option('--resource', min=1, help='Resource number shown by info (default: stored recording)')
+    ] = None,
+    start_ms: Annotated[int | None, typer.Option(help='Start position in milliseconds')] = None,
+    end_ms: Annotated[int | None, typer.Option(help='End position in milliseconds')] = None,
+    credentials: CredentialsOption = None,
+    verbose: VerboseOption = False,
+) -> None:
+    """Stream media to an external player through standard output."""
+
+    _setup_logging(verbose)
+    if url is not None and resource_index is not None:
+        raise typer.BadParameter('Use --resource with a recorder and recording, or supply a URL, separately.')
+    device_credentials = _load_credentials(credentials)
+    time_range: TimeRange | None = None
+    if start_ms is not None or end_ms is not None:
+        # Start at the beginning when only an end position is specified
+        try:
+            time_range = TimeRange(start_ms=start_ms or 0, end_ms=end_ms)
+        except ValidationError as ex:
+            console.print('[red]The time range must start at or after zero and end at or after the start.[/red]')
+            raise typer.Exit(1) from ex
+
+    async def main() -> None:
+        media_server: MediaServer | None = None
+        async with (
+            DLNAClient() as dlna,
+            DTCPClient(
+                device_credentials, srm=_device_store.load_srm(), on_srm_update=_device_store.save_srm
+            ) as client,
+        ):
+            target: Resource | str
+            if url is not None:
+                target = url
+            else:
+                media_server = await _select_server(dlna, server)
+                target = _choose_resource(
+                    await _select_recording(media_server, object_id), resource_index=resource_index
+                )
+
+            stream_file = sys.stdout.buffer
+
+            async def on_data(chunk: bytes) -> None:
+                await asyncio.to_thread(stream_file.write, chunk)
+
+            is_output_closed = False
+            written = 0
+            try:
+                with _new_progress() as progress:
+                    written = await client.stream(
+                        target, on_data, time_range=time_range, on_event=ProgressReporter(progress, 'Receiving')
+                    )
+            except BrokenPipeError:
+                # Stop normally if the stdout reader (such as ffplay) exits first
+                is_output_closed = True
+                # Redirect stdout to the null device to avoid another exception during the final flush
+                devnull = os.open(os.devnull, os.O_WRONLY)
+                os.dup2(devnull, sys.stdout.fileno())
+                os.close(devnull)
+            except DLNAError as ex:
+                if media_server is not None:
+                    raise media_server.interpret_http_error(ex, str(target)) from ex
+                raise
+            finally:
+                stream_file.flush()
+            if is_output_closed is True:
+                console.print('Stopped receiving because the output was closed.')
+                return
+            console.print(f'Received {written} bytes.')
+
+    _execute(main())
 
 
 @app.command()

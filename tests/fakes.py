@@ -10,6 +10,7 @@ import hashlib
 import secrets
 import socket
 from dataclasses import dataclass
+from html import escape
 from types import TracebackType
 from typing import Literal, Self, cast
 from urllib.parse import urlsplit
@@ -37,6 +38,9 @@ MV_EXCHANGE_KEY = 0x21
 MV_FINALIZE = 0x22
 MV_COMPLETE = 0x23
 MV_CANCEL = 0x28
+
+# Service type served by FakeRecorder
+_CONTENT_DIRECTORY = 'urn:schemas-upnp-org:service:ContentDirectory:1'
 
 # Control frame ctype / response
 _CONTROL = 0x0
@@ -976,3 +980,222 @@ class MemorySink:
 
     async def discard(self) -> None:
         self.calls.append('discard')
+
+
+_DIDL_HEADER = (
+    '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" '
+    'xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/" '
+    'xmlns:regza="urn:schemas-toshiba-co-jp:regzadata-1-0/">'
+)
+
+
+def didl_container(object_id: str, parent_id: str, title: str, child_count: int) -> str:
+    """
+    Build a DIDL-Lite container element.
+
+    Args:
+        object_id (str): Folder ID
+        parent_id (str): Parent folder ID
+        title (str): Folder title
+        child_count (int): Number of children
+
+    Returns:
+        str: Container element
+    """
+
+    return (
+        f'<container id="{escape(object_id)}" parentID="{escape(parent_id)}" childCount="{child_count}">'
+        f'<dc:title>{escape(title)}</dc:title><upnp:class>object.container.storageFolder</upnp:class></container>'
+    )
+
+
+def didl_recording(
+    object_id: str, parent_id: str, title: str, resources: str, *, fields: str = '', reference_id: str | None = None
+) -> str:
+    """
+    Build a DIDL-Lite video item element.
+
+    Args:
+        object_id (str): Recording ID
+        parent_id (str): Parent folder ID
+        title (str): Recording title
+        resources (str): res elements
+        fields (str): Additional metadata elements
+        reference_id (str | None): ID of the referenced recording for duplicate listings
+
+    Returns:
+        str: Item element
+    """
+
+    reference = f' refID="{escape(reference_id)}"' if reference_id is not None else ''
+    return (
+        f'<item id="{escape(object_id)}" parentID="{escape(parent_id)}"{reference}><dc:title>{escape(title)}</dc:title>'
+        f'<upnp:class>object.item.videoItem</upnp:class>{fields}{resources}</item>'
+    )
+
+
+def dtcp_resource(url: str, *, parameters: str = 'DLNA.ORG_CI=0;DTCP.COM_FLAGS=C0000000', attributes: str = '') -> str:
+    """
+    Build a DTCP-IP res element.
+
+    Args:
+        url (str): Resource URL
+        parameters (str): protocolInfo fourth-field parameters
+        attributes (str): Additional res attributes
+
+    Returns:
+        str: res element
+    """
+
+    return f'<res protocolInfo="http-get:*:application/x-dtcp1:{parameters}" {attributes}>{escape(url)}</res>'
+
+
+class FakeRecorder:
+    """
+    Fake recorder serving a device description and ContentDirectory listings by object ID.
+    Browse honors StartingIndex and RequestedCount so that clients must request every page.
+    """
+
+    def __init__(
+        self,
+        folders: dict[str, list[str]],
+        *,
+        manufacturer: str = 'TOSHIBA',
+        model: str = 'DBR-TEST',
+        friendly_name: str = 'Test recorder',
+        udn: str = 'uuid:00000000-0000-4000-8000-000000000001',
+        page_size: int = 100,
+    ) -> None:
+        """
+        Configure listings and device identity.
+
+        Args:
+            folders (dict[str, list[str]]): DIDL-Lite child elements for each folder ID
+            manufacturer (str): Manufacturer used for profile selection
+            model (str): Model name
+            friendly_name (str): Name shown to users
+            udn (str): Unique device name
+            page_size (int): Maximum entries returned per Browse request
+        """
+
+        self.folders = folders
+        self.manufacturer = manufacturer
+        self.model = model
+        self.friendly_name = friendly_name
+        self.udn = udn
+        self.page_size = page_size
+        # BrowseMetadata responses by object ID; other IDs are found in folder listings
+        self.metadata: dict[str, str] = {}
+        # Object IDs whose Browse requests fail with HTTP 500
+        self.failing_ids: set[str] = set()
+        # Received Browse requests as (BrowseFlag, ObjectID, StartingIndex)
+        self.calls: list[tuple[str, str, int]] = []
+        self.port = 0
+        self._runner: web.AppRunner | None = None
+
+    @property
+    def location(self) -> str:
+        """Return the device description URL."""
+
+        return f'http://127.0.0.1:{self.port}/description.xml'
+
+    async def __aenter__(self) -> Self:
+        application = web.Application()
+        application.router.add_route('*', '/{path:.*}', self._handle)
+        self._runner = web.AppRunner(application)
+        await self._runner.setup()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(('127.0.0.1', 0))
+        self.port = int(sock.getsockname()[1])
+        await web.SockSite(self._runner, sock).start()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        if self._runner is not None:
+            await self._runner.cleanup()
+            self._runner = None
+
+    def _find(self, object_id: str) -> str | None:
+        """
+        Find the DIDL-Lite element of an object in the configured listings.
+
+        Args:
+            object_id (str): Object ID
+
+        Returns:
+            str | None: Element, or None when not listed
+        """
+
+        if object_id in self.metadata:
+            return self.metadata[object_id]
+        needle = f'id="{escape(object_id)}"'
+        for children in self.folders.values():
+            for child in children:
+                if needle in child:
+                    return child
+        return None
+
+    async def _handle(self, request: web.Request) -> web.Response:
+        """
+        Serve the device description, service description and ContentDirectory actions.
+
+        Args:
+            request (web.Request): HTTP request
+
+        Returns:
+            web.Response: Response document
+        """
+
+        if request.path == '/description.xml':
+            return web.Response(
+                text=f"""<root xmlns="urn:schemas-upnp-org:device-1-0"><device>
+                <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+                <friendlyName>{escape(self.friendly_name)}</friendlyName><manufacturer>{escape(self.manufacturer)}</manufacturer>
+                <modelName>{escape(self.model)}</modelName><UDN>{escape(self.udn)}</UDN>
+                <serviceList><service><serviceType>{_CONTENT_DIRECTORY}</serviceType>
+                <serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId><controlURL>/control</controlURL>
+                <eventSubURL>/event</eventSubURL><SCPDURL>/scpd.xml</SCPDURL></service></serviceList>
+                </device></root>""",
+                content_type='text/xml',
+            )
+        if request.path == '/scpd.xml':
+            return web.Response(
+                text='<scpd xmlns="urn:schemas-upnp-org:service-1-0"><actionList>'
+                '<action><name>Browse</name></action></actionList></scpd>',
+                content_type='text/xml',
+            )
+        envelope = ET.fromstring(await request.read())
+        body = envelope.find('{http://schemas.xmlsoap.org/soap/envelope/}Body')
+        if body is None or len(body) == 0:
+            return web.Response(status=400)
+        action = body[0]
+        arguments = {child.tag: child.text or '' for child in action}
+        object_id = arguments.get('ObjectID', '0')
+        flag = arguments.get('BrowseFlag', '')
+        start = int(arguments.get('StartingIndex', '0') or '0')
+        self.calls.append((flag, object_id, start))
+        if object_id in self.failing_ids:
+            return web.Response(status=500)
+        if flag == 'BrowseMetadata':
+            element = self._find(object_id)
+            if element is None:
+                return web.Response(status=500)
+            elements, total = [element], 1
+        else:
+            children = self.folders.get(object_id, [])
+            count = int(arguments.get('RequestedCount', '0') or '0') or self.page_size
+            elements = children[start : start + min(count, self.page_size)]
+            total = len(children)
+        result = _DIDL_HEADER + ''.join(elements) + '</DIDL-Lite>'
+        return web.Response(
+            text=f'''<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>
+            <u:BrowseResponse xmlns:u="{_CONTENT_DIRECTORY}"><Result>{escape(result)}</Result>
+            <NumberReturned>{len(elements)}</NumberReturned><TotalMatches>{total}</TotalMatches>
+            <UpdateID>1</UpdateID></u:BrowseResponse></s:Body></s:Envelope>''',
+            content_type='text/xml',
+        )
