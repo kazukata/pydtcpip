@@ -7,8 +7,8 @@ import pytest
 
 from pydtcpip.client import DTCPClient
 from pydtcpip.dlna.protocol_info import parse_protocol_info
-from pydtcpip.errors import DTCPError, MoveCommitmentRejectedError
-from pydtcpip.events import TransferEvent
+from pydtcpip.errors import DLNAError, DTCPError, MoveCommitmentRejectedError
+from pydtcpip.events import MediaInfoReceived, TransferEvent
 from pydtcpip.models import MoveResumeState, Resource, TimeRange
 from pydtcpip.sinks import FileSink
 from tests.fakes import (
@@ -35,6 +35,7 @@ async def test_stream_decrypts_all_data(
     """Decrypt all data when HTTP chunks cross packet boundaries and the final packet contains padding."""
 
     received = bytearray()
+    events: list[TransferEvent] = []
 
     async def on_data(chunk: bytes) -> None:
         received.extend(chunk)
@@ -44,11 +45,45 @@ async def test_stream_decrypts_all_data(
         FakeMediaServer(source, _CONTENT, framing=framing) as server,
         DTCPClient(sink_device.credentials(), timeout=5) as client,
     ):
-        size = await client.stream(server.url, on_data)
+        size = await client.stream(server.url, on_data, on_event=events.append)
 
     assert bytes(received) == _CONTENT
     assert size == len(_CONTENT)
     assert source.errors == []
+    responses = [event for event in events if isinstance(event, MediaInfoReceived)]
+    assert [event.method for event in responses] == ['HEAD', 'GET']
+    assert responses[1].media_info.headers['Content-Type'].startswith('application/x-dtcp1;')
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('method', ['HEAD', 'GET'])
+async def test_media_http_errors_retain_diagnostics_without_credentials(
+    authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice, method: str
+) -> None:
+    """Surface the diagnostic fields in Issue #11 without leaking unrelated HTTP headers."""
+
+    async def on_data(chunk: bytes) -> None:
+        pytest.fail('An HTTP error must not produce media bytes')
+
+    async with (
+        FakeSourceAKE(authority, source_device) as source,
+        FakeMediaServer(source, _CONTENT) as server,
+        DTCPClient(sink_device.credentials(), timeout=5) as client,
+    ):
+        server.http_errors[method] = (
+            503,
+            {
+                'ERROR-INFO': 'LSI0 rsc 541 Sys Busy',
+                'error.pxn.panasonic.com': '9009',
+                'Set-Cookie': 'private-cookie',
+            },
+        )
+        with pytest.raises(DLNAError) as caught:
+            await client.stream(server.url, on_data)
+    assert caught.value.http_status == 503
+    assert caught.value.diagnostic_headers == {'error-info': 'LSI0 rsc 541 Sys Busy', 'Error.pxn.panasonic.com': '9009'}
+    assert '9009' in str(caught.value) and 'Sys Busy' in str(caught.value)
+    assert 'private-cookie' not in str(caught.value)
 
 
 @pytest.mark.anyio
@@ -116,6 +151,7 @@ async def test_stream_dispatches_events_in_order(
         'peer_certificate_verified',
         'proximity_check_responded',
         'authentication_completed',
+        'media_info_received',
         'transfer_started',
         'transfer_protection_observed',
         'transfer_progressed',

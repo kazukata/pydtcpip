@@ -691,6 +691,8 @@ async def test_cli_move_archives_metadata_and_completion(
     assert metadata.recording.protection.remaining_copy_count.value == 9
     assert metadata.chapters.chapters[0].position_ms == 12345
     events = [event['type'] for event in metadata.transfer_events]
+    responses = [event for event in metadata.transfer_events if event['type'] == 'media_info_received']
+    assert [event['method'] for event in responses] == ['HEAD', 'GET']
     assert events.index('sink_persisted') < events.index('move_finalize_requested')
     assert events[-2:] == ['move_finalized', 'move_completed']
     assert sink_device.private_key.hex() not in saved_text

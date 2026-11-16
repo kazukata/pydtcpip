@@ -33,6 +33,7 @@ class MediaInfoReceived(_BaseEvent):
 
     type: Literal['media_info_received'] = 'media_info_received'
     media_info: MediaInfo
+    method: Literal['HEAD', 'GET'] = 'HEAD'
 
 
 class AuthenticationStarted(_BaseEvent):

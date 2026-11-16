@@ -150,6 +150,9 @@ class DTCPClient:
 
         headers = self._request_headers(time_range=time_range)
         async with self._open('GET', url, headers) as (response, received_info):
+            await dispatch_event(
+                on_event, MediaInfoReceived(transfer_id=transfer_id, media_info=received_info, method='GET')
+            )
             if (received_info.host, received_info.port) != (media_info.host, media_info.port):
                 raise DTCPError('The HEAD and GET responses specify different DTCP-IP authentication endpoints.')
             await dispatch_event(
@@ -264,6 +267,9 @@ class DTCPClient:
             if self._supports_background_transfer(media_info) is True:
                 headers['transferMode.dlna.org'] = 'Background'
             async with self._open('GET', url, headers) as (response, received_info):
+                await dispatch_event(
+                    on_event, MediaInfoReceived(transfer_id=transfer_id, media_info=received_info, method='GET')
+                )
                 if (received_info.host, received_info.port) != (media_info.host, media_info.port):
                     raise DTCPError('The HEAD and GET responses specify different DTCP-IP authentication endpoints.')
 
@@ -507,7 +513,14 @@ class DTCPClient:
                 # Include HTTP status in errors; the caller interprets device-specific meanings such as client refusal
                 if response.status >= 400:
                     raise DLNAError(
-                        f'Media {method} request failed (HTTP {response.status}).', http_status=response.status
+                        f'Media {method} request failed (HTTP {response.status}).',
+                        http_status=response.status,
+                        # Preserve diagnostic fields without copying cookies or authentication headers into exceptions
+                        diagnostic_headers={
+                            name: response.headers[name]
+                            for name in ('error-info', 'Error.pxn.panasonic.com')
+                            if name in response.headers
+                        },
                     )
 
                 # DTCP-IP responses advertise the authentication endpoint in Content-Type parameters

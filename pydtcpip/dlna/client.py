@@ -378,7 +378,9 @@ class MediaServer:
             return error
         interpreted = self.profile.resolve_http_status()(error.http_status, url)
         if isinstance(interpreted, DLNAError):
-            return interpreted
+            return type(interpreted)(
+                str(interpreted), http_status=error.http_status, diagnostic_headers=error.diagnostic_headers
+            )
         return error
 
     async def _call_content_directory(self, action: str, arguments: dict[str, str]) -> SOAPResult:

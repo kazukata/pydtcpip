@@ -686,6 +686,7 @@ class FakeMediaServer:
         self.port = 0
         # Record received methods and headers in order
         self.requests: list[tuple[str, dict[str, str]]] = []
+        self.http_errors: dict[str, tuple[int, dict[str, str]]] = {}
         self._runner: web.AppRunner | None = None
 
     async def __aenter__(self) -> Self:
@@ -738,6 +739,9 @@ class FakeMediaServer:
         """
 
         self.requests.append((request.method, dict(request.headers)))
+        if request.method in self.http_errors:
+            status, error_headers = self.http_errors[request.method]
+            return web.Response(status=status, headers=error_headers)
         headers = {
             'Content-Type': f'application/x-dtcp1;DTCP1HOST=127.0.0.1;DTCP1PORT={self.ake.port};CONTENTFORMAT="video/mpeg"',
             'contentFeatures.dlna.org': _CONTENT_FEATURES,
