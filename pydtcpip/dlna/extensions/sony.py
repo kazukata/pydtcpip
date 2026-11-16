@@ -189,6 +189,11 @@ class SonyExtension(MetadataExtension):
                         root = ET.fromstring(raw_result)
                     except ET.ParseError:
                         root = ET.fromstring(f'<Result>{raw_result}</Result>')
+                    # A single field is valid XML, but still needs the same parent as a multi-field fragment
+                    if len(root) == 0 and root.tag.rpartition('}')[2] not in ('root', 'Result', 'item'):
+                        wrapper = ET.Element('Result')
+                        wrapper.append(root)
+                        root = wrapper
             else:
                 root = ET.fromstring(raw_result)
         except ET.ParseError as ex:

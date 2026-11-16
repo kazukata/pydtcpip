@@ -20,6 +20,7 @@ from typer.testing import CliRunner
 from pydtcpip import DLNAClient, Recording, RecordingMetadata
 from pydtcpip.__main__ import app
 from pydtcpip.dlna.didl import parse_didl
+from pydtcpip.dlna.extensions.sony import SonyMetadataResult
 from pydtcpip.dlna.extensions.xml_chapters import ChapterFormat, parse_chapters
 from pydtcpip.dlna.profiles import PROFILES
 from pydtcpip.errors import DLNAError
@@ -447,17 +448,25 @@ async def test_metadata_collection_and_sidecars(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize('encoding', ['document', 'fragment', 'embedded', 'failed', 'unsupported'])
+@pytest.mark.parametrize(
+    'encoding', ['document', 'fragment', 'embedded', 'single_fragment', 'single_embedded', 'failed', 'unsupported']
+)
 async def test_sony_descriptions_reach_cli_and_archive(encoding: str, tmp_path: Path) -> None:
     source = MetadataSource('Sony', 'BDZ-TEST', recording_xml().replace(' refID="42"', ''))
     fields = '<summary>Program &amp; summary</summary><detail0>First section</detail0><detail7>Last section</detail7>'
+    if encoding.startswith('single_'):
+        fields = '<summary>Program &amp; summary</summary>'
     if encoding == 'unsupported':
         source.response_bodies['/pvr.xml'] = (
             b'<scpd xmlns="urn:schemas-upnp-org:service-1-0"><actionList><action><name>X_GetTitleList2</name></action>'
             b'<action><name>X_GetTitleInfo</name></action><action><name>X_GetMediaInfo</name></action></actionList></scpd>'
         )
     elif encoding != 'document':
-        content = fields if encoding == 'embedded' else escape(fields if encoding == 'fragment' else '<broken>')
+        content = (
+            fields
+            if encoding in ('embedded', 'single_embedded')
+            else escape(fields if encoding in ('fragment', 'single_fragment') else '<broken>')
+        )
         source.response_bodies['X_GetTitleDetail'] = (
             f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
             f'<u:X_GetTitleDetailResponse xmlns:u="{_PVR}"><Result>{content}</Result>'
@@ -480,9 +489,14 @@ async def test_sony_descriptions_reach_cli_and_archive(encoding: str, tmp_path: 
         display = await asyncio.to_thread(CliRunner().invoke, app, args)
         assert display.exit_code == 0, display.output
         if expected_status == 'known':
-            assert 'Last section' in display.output
-            assert 'First section' in display.output
-            assert 'Last section' in saved.model_dump_json()
+            summary = 'Program summary' if encoding == 'document' else 'Program & summary'
+            assert summary in display.output
+            details = SonyMetadataResult.model_validate(queries['recording_description'].data)
+            assert details.items[0].get_value('summary') == summary
+            if encoding.startswith('single_') is False:
+                assert 'Last section' in display.output
+                assert 'First section' in display.output
+                assert 'Last section' in saved.model_dump_json()
         if encoding == 'unsupported':
             assert all(action != 'X_GetTitleDetail' for action, _ in source.calls)
         elif encoding != 'document':
@@ -505,9 +519,12 @@ async def test_chapter_document_format_is_independent_of_reference_field(format:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize('is_embedded', [True, False])
-async def test_sony_start_fields_without_document_wrapper(is_embedded: bool) -> None:
+@pytest.mark.parametrize('is_single', [True, False])
+async def test_sony_start_fields_without_document_wrapper(is_embedded: bool, is_single: bool) -> None:
     source = MetadataSource('Sony', 'BDZ-TEST', recording_xml().replace(' refID="42"', ''))
-    fields = '<recordStartDate>2026-01-01T19:59:57</recordStartDate><startPTS>270000</startPTS>'
+    fields = '<recordStartDate>2026-01-01T19:59:57</recordStartDate>'
+    if is_single is False:
+        fields += '<startPTS>270000</startPTS>'
     content = fields if is_embedded else escape(fields)
     source.response_bodies['X_GetTitleInfo'] = (
         f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
@@ -522,8 +539,9 @@ async def test_sony_start_fields_without_document_wrapper(is_embedded: bool) -> 
     start = next(query for query in metadata.queries if query.name == 'recording_start')
     assert start.status == 'known'
     assert start.data is not None
-    assert '2026-01-01T19:59:57' in start.model_dump_json()
-    assert '270000' in start.model_dump_json()
+    details = SonyMetadataResult.model_validate(start.data)
+    assert details.items[0].get_value('recordStartDate') == '2026-01-01T19:59:57'
+    assert details.items[0].get_value('startPTS') == (None if is_single else '270000')
     assert source.response_bodies['X_GetTitleInfo'] in [response.body for response in metadata.responses]
 
 
