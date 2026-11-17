@@ -5,7 +5,7 @@ import logging
 import sys
 import unicodedata
 from collections.abc import Callable
-from contextlib import AsyncExitStack, aclosing
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +27,7 @@ from textual.widgets import DataTable, Footer, Input, Label, OptionList, RichLog
 from textual.widgets.option_list import Option
 
 from pydtcpip.client import DTCPClient
+from pydtcpip.dlna import ssdp
 from pydtcpip.dlna.client import DLNAClient, MediaServer
 from pydtcpip.dlna.description import parse_device_description
 from pydtcpip.errors import PyDTCPIPError
@@ -426,21 +427,47 @@ class PyDTCPIPApp(App[None]):
         """List search results first, then add recorders that announce themselves later."""
 
         self.notify('Searching for recorders...')
-        try:
-            servers = await self._dlna.discover(timeout=3.0, interface=self._interface, port=self._search_port)
-        except (OSError, PyDTCPIPError) as ex:
-            _LOGGER.error(f'Discovery failed: {ex}')
-            self.notify(f'Discovery failed: {ex}', severity='error', markup=False)
-            return
-        for server in servers:
-            self._add_server(server)
-        if len(self._servers) == 0:
-            self.notify('Listening for recorder announcements. Press + to enter a device description URL.')
-        # Some recorders still announce themselves periodically after they stop answering searches
-        ## Allow a little more than one 30-second announcement interval
-        async with aclosing(self._dlna.listen_for_servers(timeout=35.0, interface=self._interface)) as announcements:
-            async for server in announcements:
+        announced: list[MediaServer] = []
+        is_initial_search_done = False
+
+        def on_server(server: MediaServer) -> None:
+            """
+            Keep active-search results first in the list even if the announcement arrived earlier.
+
+            Args:
+                server (MediaServer): Server whose device description was retrieved
+            """
+
+            if is_initial_search_done:
                 self._add_server(server)
+            else:
+                announced.append(server)
+
+        # Allow a little more than one 30-second announcement interval in the background
+        async with asyncio.TaskGroup() as tasks:
+            listener = None
+            if self._search_port != ssdp.SSDP_PORT:
+                listener = tasks.create_task(
+                    self._dlna.listen_for_servers(on_server=on_server, timeout=35.0, interface=self._interface)
+                )
+            try:
+                servers = await self._dlna.discover(
+                    timeout=3.0, interface=self._interface, port=self._search_port, include_announcements=False
+                )
+            except (OSError, PyDTCPIPError) as ex:
+                if listener is not None:
+                    listener.cancel()
+                _LOGGER.error(f'Discovery failed: {ex}')
+                self.notify(f'Discovery failed: {ex}', severity='error', markup=False)
+                return
+            for server in [*servers, *announced]:
+                self._add_server(server)
+            is_initial_search_done = True
+            if len(self._servers) == 0:
+                self.notify('Listening for recorder announcements. Press + to enter a device description URL.')
+            # If the user chose UDP 1900 for replies, listen once the active search has released it
+            if listener is None:
+                await self._dlna.listen_for_servers(on_server=on_server, timeout=35.0, interface=self._interface)
         if len(self._servers) == 0:
             self.notify(
                 f'No recorders found. Allow incoming UDP traffic on port {self._search_port}, '

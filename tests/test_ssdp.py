@@ -4,6 +4,7 @@ import asyncio
 import errno
 import socket
 import sys
+from contextlib import AsyncExitStack
 from typing import cast
 
 import aiohttp
@@ -11,7 +12,7 @@ import pytest
 from aiohttp import web
 
 from pydtcpip.dlna import ssdp
-from pydtcpip.dlna.client import DLNAClient
+from pydtcpip.dlna.client import DLNAClient, MediaServer
 from pydtcpip.receiver import DubbingReceiver
 from tests.fakes import FakeDevice, FakeRecorder, MemorySink, didl_container
 
@@ -349,6 +350,136 @@ async def test_receiver_releases_http_after_advertisement_failure(
 
 @pytest.mark.anyio
 @pytest.mark.skipif(sys.platform != 'linux', reason='Exercises multicast on the Linux loopback interface')
+async def test_discover_keeps_an_explicit_reply_port_at_the_ssdp_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Send searches from the configured port even when it matches the multicast port."""
+
+    interface = '127.0.0.1'
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as monitor:
+        monitor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        monitor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        monitor.bind((ssdp.SSDP_ADDRESS, 0))
+        port = monitor.getsockname()[1]
+        monkeypatch.setattr(ssdp, 'SSDP_PORT', port)
+        monitor.setsockopt(
+            socket.IPPROTO_IP,
+            socket.IP_ADD_MEMBERSHIP,
+            socket.inet_aton(ssdp.SSDP_ADDRESS) + socket.inet_aton(interface),
+        )
+        monitor.setblocking(False)
+        async with asyncio.timeout(5), DLNAClient() as client, asyncio.TaskGroup() as tasks:
+            tasks.create_task(client.discover(interface=interface, port=port, timeout=0.2))
+            request, source = await asyncio.get_running_loop().sock_recvfrom(monitor, 8192)
+            assert request.startswith(b'M-SEARCH * HTTP/1.1\r\n')
+            assert source[1] == port
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(sys.platform != 'linux', reason='Exercises multicast on the Linux loopback interface')
+@pytest.mark.parametrize('listen_only', [False, True])
+async def test_an_unreachable_announced_server_does_not_block_another_recorder(
+    monkeypatch: pytest.MonkeyPatch, listen_only: bool
+) -> None:
+    """Report a reachable recorder while a separate announced HTTP endpoint is still stalled."""
+
+    interface = '127.0.0.1'
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as port_socket:
+        port_socket.bind((interface, 0))
+        port = port_socket.getsockname()[1]
+    monkeypatch.setattr(ssdp, 'SSDP_PORT', port)
+    was_requested = asyncio.Event()
+    release_http = asyncio.Event()
+
+    async def stall_description(request: web.Request) -> web.Response:
+        """
+        Wait until the test has observed the other recorder.
+
+        Args:
+            request (web.Request): HTTP request for the unresponsive device description
+
+        Returns:
+            web.Response: Failure after the test releases the request
+        """
+
+        was_requested.set()
+        await release_http.wait()
+        return web.Response(status=503)
+
+    async with AsyncExitStack() as stack:
+        app = web.Application()
+        app.router.add_get('/description.xml', stall_description)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        stack.push_async_callback(runner.cleanup)
+        http_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        http_socket.bind((interface, 0))
+        stalled_location = f'http://{interface}:{http_socket.getsockname()[1]}/description.xml'
+        await web.SockSite(runner, http_socket).start()
+        recorder = await stack.enter_async_context(FakeRecorder({}))
+        client = await stack.enter_async_context(DLNAClient(timeout=1.5))
+        if not listen_only:
+            advertiser = ssdp.SSDPAdvertiser(
+                interface=interface,
+                location=recorder.location,
+                udn=recorder.udn,
+                targets=(ssdp.MEDIA_SERVER_DEVICE_TYPE,),
+                allowed_senders=None,
+                server='test',
+            )
+            await advertiser.start()
+            stack.push_async_callback(advertiser.stop)
+
+        found = asyncio.Event()
+        servers: list[MediaServer] = []
+
+        def on_server(server: MediaServer) -> None:
+            """
+            Record the server delivered while the unrelated HTTP request is still blocked.
+
+            Args:
+                server (MediaServer): Server reported by the announcement listener
+            """
+
+            servers.append(server)
+            found.set()
+
+        async with asyncio.TaskGroup() as tasks:
+            listener = None
+            active_search = None
+            if listen_only:
+                listener = tasks.create_task(
+                    client.listen_for_servers(on_server=on_server, timeout=0.5, interface=interface)
+                )
+            else:
+                active_search = tasks.create_task(client.discover(timeout=0.5, interface=interface))
+            try:
+                async with asyncio.timeout(1.0):
+                    await asyncio.sleep(0.05)
+                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+                        sender.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(interface))
+                        for location in (stalled_location, recorder.location) if listen_only else (stalled_location,):
+                            sender.sendto(
+                                (
+                                    'NOTIFY * HTTP/1.1\r\n'
+                                    f'NT: {ssdp.MEDIA_SERVER_DEVICE_TYPE}\r\nNTS: ssdp:alive\r\n'
+                                    f'LOCATION: {location}\r\n\r\n'
+                                ).encode(),
+                                (ssdp.SSDP_ADDRESS, port),
+                            )
+                    await was_requested.wait()
+                    if listener is not None:
+                        await found.wait()
+                        # The listener remains responsible for the requests accepted during the window
+                        assert not listener.done()
+                    else:
+                        assert active_search is not None
+                        servers = await active_search
+                    assert [server.description.udn for server in servers] == [recorder.udn]
+            finally:
+                release_http.set()
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(sys.platform != 'linux', reason='Exercises multicast on the Linux loopback interface')
 @pytest.mark.parametrize('listen_only', [False, True])
 async def test_discover_uses_media_server_announcements(monkeypatch: pytest.MonkeyPatch, listen_only: bool) -> None:
     """Find and browse a recorder that sends alive announcements without answering searches."""
@@ -394,7 +525,8 @@ async def test_discover_uses_media_server_announcements(monkeypatch: pytest.Monk
         async with asyncio.TaskGroup() as tasks:
             tasks.create_task(announce())
             if listen_only:
-                servers = [server async for server in client.listen_for_servers(interface=interface, timeout=0.3)]
+                servers: list[MediaServer] = []
+                await client.listen_for_servers(on_server=servers.append, interface=interface, timeout=0.3)
             else:
                 servers = await client.discover(interface=interface, timeout=0.3)
         assert [server.description.udn for server in servers] == [recorder.udn]

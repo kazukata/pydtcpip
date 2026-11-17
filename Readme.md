@@ -96,7 +96,7 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
     The [nasne HOME migration feature](https://www.buffalo.jp/s3/guide/ns-n100/04/ja/recorder/dubbing.html) requires the destination nasne to start the transfer.
 - **Buffalo nasne NS-N100**
   - If the nasne stops answering discovery requests, run `pydtcpip discover --timeout 35` to give its periodic announcements time to arrive.  
-    The TUI listens for these announcements in the background after the initial search.
+    The TUI listens for these announcements in the background and lists the initial search results as soon as they are ready.
   - If the nasne disappears from discovery even with the correct `--interface`, it may still be reachable by its device description URL.  
     Pass the URL to `info --server`.  
     In the TUI, press `+` and enter the URL.  
@@ -453,6 +453,7 @@ $ sudo ufw allow from 192.0.2.0/24 to any port 57000
 > [!TIP]  
 > By default, discovery runs simultaneously on each IPv4 network, even when wired LAN and Wi-Fi are both in use. To limit discovery to a particular network, you can specify the PC's IPv4 address with the `--interface` option as shown below.  
 > You can change the discovery port with `--search-port` before the subcommand (`0` lets the OS assign a port automatically).
+> Use a response port other than UDP 1900 if you want the `discover` command to listen for announcements as well.
 >
 > ```bash
 > $ pydtcpip --interface 192.0.2.10 discover

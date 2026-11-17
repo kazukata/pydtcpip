@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import re
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from types import TracebackType
@@ -13,13 +13,13 @@ from urllib.parse import urljoin
 import aiohttp
 from pydantic import BaseModel, ConfigDict
 
+from pydtcpip.dlna import ssdp
 from pydtcpip.dlna.description import DeviceDescription, ServiceInfo, parse_device_description
 from pydtcpip.dlna.didl import parse_didl
 from pydtcpip.dlna.extensions import MetadataExtension, create_extension
 from pydtcpip.dlna.profiles import Profile, select_profile
 from pydtcpip.dlna.scpd import ServiceDescription, parse_service_description
 from pydtcpip.dlna.soap import SOAPResult, call_action
-from pydtcpip.dlna.ssdp import MEDIA_SERVER_DEVICE_TYPE, SSDPResponse, listen_for_advertisements, search
 from pydtcpip.errors import DLNAError, UnsupportedActionError
 from pydtcpip.models import ChapterList, Container, MetadataQuery, MetadataResponse, Recording, RecordingMetadata
 
@@ -456,7 +456,14 @@ class DLNAClient:
             await self._http_session.close()
             self._http_session = None
 
-    async def discover(self, *, timeout: float = 3.0, interface: str | None = None, port: int = 0) -> list[MediaServer]:
+    async def discover(
+        self,
+        *,
+        timeout: float = 3.0,
+        interface: str | None = None,
+        port: int = 0,
+        include_announcements: bool = True,
+    ) -> list[MediaServer]:
         """
         Discover media servers using SSDP and return those whose descriptions were retrieved.
 
@@ -464,72 +471,109 @@ class DLNAClient:
             timeout (float): Seconds to wait for discovery responses and announcements
             interface (str | None): Local IPv4 address for discovery (None searches every IPv4 network)
             port (int): UDP response port (0 lets the OS choose)
+            include_announcements (bool): Also collect servers that announce themselves during discovery
 
         Returns:
             list[MediaServer]: Discovered media servers
         """
 
-        advertised_locations: dict[str, None] = {}
-        async with listen_for_advertisements(
-            lambda advertisement: advertised_locations.setdefault(advertisement.location), interface=interface
-        ):
-            responses = await search(MEDIA_SERVER_DEVICE_TYPE, timeout=timeout, interface=interface, port=port)
-        locations = dict.fromkeys([response.location for response in responses]) | advertised_locations
+        announced: list[MediaServer] = []
+        listener = None
+        # An active search explicitly using UDP 1900 must keep that reply port
+        if include_announcements and port != ssdp.SSDP_PORT:
+            listener = asyncio.create_task(
+                self.listen_for_servers(on_server=announced.append, timeout=timeout, interface=interface)
+            )
+        try:
+            responses = await ssdp.search(timeout=timeout, interface=interface, port=port)
+            searched = await asyncio.gather(*(self._get_discovered_server(response.location) for response in responses))
+            if listener is not None and not any(searched) and not announced:
+                await listener
+        finally:
+            if listener is not None:
+                listener.cancel()
+                await asyncio.gather(listener, return_exceptions=True)
 
-        # Fetch descriptions concurrently and log and exclude devices that fail
-        results = await asyncio.gather(*(self.get_server(location) for location in locations), return_exceptions=True)
         servers: list[MediaServer] = []
         seen_udns: set[str] = set()
-        for location, result in zip(locations, results, strict=True):
-            if isinstance(result, BaseException):
-                if isinstance(result, DLNAError) is False:
-                    raise result
-                _LOGGER.warning(f'Could not fetch device description: {location}', exc_info=result)
+        for server in [*searched, *announced]:
+            if server is None:
                 continue
             # A multi-homed server may advertise a different URL on each network
             ## Deduplicate after fetching so an unreachable URL cannot hide a reachable one
-            udn = result.description.udn
+            udn = server.description.udn
             if udn and udn in seen_udns:
                 continue
             seen_udns.add(udn)
-            servers.append(result)
+            servers.append(server)
         return servers
 
-    async def listen_for_servers(self, *, timeout: float, interface: str | None = None) -> AsyncGenerator[MediaServer]:
+    async def listen_for_servers(
+        self,
+        *,
+        on_server: Callable[[MediaServer], None],
+        timeout: float,
+        interface: str | None = None,
+    ) -> None:
         """
-        Yield media servers as their availability announcements arrive.
+        Resolve announcements independently and report each reachable server as soon as it is available.
+        Descriptions already being fetched can finish after the listening window closes.
 
         Args:
+            on_server (Callable[[MediaServer], None]): Called for each resolved server
             timeout (float): Seconds to listen for announcements
             interface (str | None): Local IPv4 address (None listens on every IPv4 network)
-
-        Yields:
-            MediaServer: Announcing server whose device description was retrieved
         """
 
-        announcements: asyncio.Queue[SSDPResponse] = asyncio.Queue()
         seen_locations: set[str] = set()
-        async with listen_for_advertisements(announcements.put_nowait, interface=interface) as is_listening:
-            if is_listening is False:
-                return
-            loop = asyncio.get_running_loop()
-            deadline = loop.time() + timeout
-            while loop.time() < deadline:
-                try:
-                    async with asyncio.timeout_at(deadline):
-                        announcement = await announcements.get()
-                except TimeoutError:
-                    break
-                location = announcement.location
-                if location in seen_locations:
-                    continue
-                try:
-                    server = await self.get_server(location)
-                except DLNAError as ex:
-                    _LOGGER.warning(f'Could not fetch device description: {location}', exc_info=ex)
-                    continue
-                seen_locations.add(location)
-                yield server
+        async with asyncio.TaskGroup() as tasks:
+
+            async def resolve(location: str) -> None:
+                """
+                Report an announced server, or allow a later announcement to retry the location.
+
+                Args:
+                    location (str): Device description URL from the announcement
+                """
+
+                server = await self._get_discovered_server(location)
+                if server is None:
+                    seen_locations.remove(location)
+                else:
+                    on_server(server)
+
+            def receive(announcement: ssdp.SSDPResponse) -> None:
+                """
+                Fetch the announcement's description once per location.
+
+                Args:
+                    announcement (ssdp.SSDPResponse): Media server availability announcement
+                """
+
+                if announcement.location not in seen_locations:
+                    seen_locations.add(announcement.location)
+                    tasks.create_task(resolve(announcement.location))
+
+            async with ssdp.listen_for_advertisements(receive, interface=interface) as is_listening:
+                if is_listening:
+                    await asyncio.sleep(timeout)
+
+    async def _get_discovered_server(self, location: str) -> MediaServer | None:
+        """
+        Fetch a discovered description without hiding other devices if this one is unreachable.
+
+        Args:
+            location (str): Discovered device description URL
+
+        Returns:
+            MediaServer | None: Reachable server, or None if its description could not be loaded
+        """
+
+        try:
+            return await self.get_server(location)
+        except DLNAError as ex:
+            _LOGGER.warning(f'Could not fetch device description: {location}', exc_info=ex)
+            return None
 
     async def get_server(self, location: str) -> MediaServer:
         """

@@ -167,7 +167,13 @@ async def _launch(
     async with AsyncExitStack() as stack:
         dlna = await stack.enter_async_context(DLNAClient())
 
-        async def discover(*, timeout: float = 3.0, interface: str | None = None, port: int = 0) -> list[MediaServer]:
+        async def discover(
+            *,
+            timeout: float = 3.0,
+            interface: str | None = None,
+            port: int = 0,
+            include_announcements: bool = True,
+        ) -> list[MediaServer]:
             return [await dlna.get_server(recorder.location)]
 
         dlna.discover = discover  # type: ignore[method-assign]
