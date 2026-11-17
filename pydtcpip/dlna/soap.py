@@ -1,6 +1,7 @@
 """Invoke UPnP actions over SOAP."""
 
 from collections.abc import Callable
+from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
@@ -36,6 +37,7 @@ async def call_action(
     arguments: dict[str, str],
     *,
     timeout: float,
+    reuse_connection: bool = True,
     extra_headers: dict[str, str] | None = None,
     on_response: Callable[[MetadataResponse], None] | None = None,
 ) -> SOAPResult:
@@ -49,6 +51,7 @@ async def call_action(
         action (str): Action name
         arguments (dict[str, str]): Input argument names and values, sent in insertion order
         timeout (float): Response timeout in seconds
+        reuse_connection (bool): Allow the HTTP connector to reuse a TCP connection
         extra_headers (dict[str, str] | None): Additional headers required by an optional service
         on_response (Callable[[MetadataResponse], None] | None): Retain the complete response before XML parsing
 
@@ -72,12 +75,29 @@ async def call_action(
         headers.update(extra_headers)
 
     try:
-        async with session.post(
-            control_url,
-            data=body.encode('utf-8'),
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=timeout),
-        ) as response:
+        async with AsyncExitStack() as stack:
+            if reuse_connection is False and session.connector is not None and session.connector.force_close is False:
+                session = await stack.enter_async_context(
+                    aiohttp.ClientSession(
+                        connector=aiohttp.TCPConnector(force_close=True),
+                        headers=session.headers,
+                        skip_auto_headers=session.skip_auto_headers,
+                        cookie_jar=session.cookie_jar,
+                        auth=session.auth,
+                        auto_decompress=session.auto_decompress,
+                        raise_for_status=session.raise_for_status,
+                        trace_configs=session.trace_configs,
+                        trust_env=session.trust_env,
+                    )
+                )
+            response = await stack.enter_async_context(
+                session.post(
+                    control_url,
+                    data=body.encode('utf-8'),
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                )
+            )
             raw_body = await response.read()
             status = response.status
             if on_response is not None:

@@ -25,6 +25,6 @@ SONY_PCTV = Profile(
     matches=_matches,
     is_unverified=True,
     copy_count_fields=(CopyCountField('{urn:schemas-sony-com:av}COGCount', includes_final_move=True),),
-    # Reused SOAP connections can be disconnected before the next Browse response
-    soap_headers=(('Connection', 'close'),),
+    # The server can disconnect a reused connection even if the request asks it to close the connection
+    reuse_soap_connections=False,
 )

@@ -369,6 +369,68 @@ async def test_pctv_browse_closes_connections_and_reads_copy_counts(model: str) 
 
 
 @pytest.mark.anyio
+async def test_pctv_dump_uses_fresh_connections_even_when_the_server_ignores_connection_close(tmp_path: Path) -> None:
+    """Complete the standard dump when the server keeps the socket open but refuses a second Browse on it."""
+
+    description = (
+        f'<root xmlns="urn:schemas-upnp-org:device-1-0"><device><manufacturer>Sony Corporation</manufacturer>'
+        f'<modelName>PC TV Plus</modelName><friendlyName>Test server</friendlyName><serviceList><service>'
+        f'<serviceType>{_CDS}</serviceType><controlURL>/browse</controlURL><SCPDURL>/scpd.xml</SCPDURL>'
+        '</service></serviceList></device></root>'
+    ).encode()
+    connections: list[asyncio.StreamWriter] = []
+
+    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """
+        Keep connections open after SOAP responses and disconnect on a repeated Browse.
+
+        Args:
+            reader (asyncio.StreamReader): HTTP request input
+            writer (asyncio.StreamWriter): HTTP response output
+        """
+
+        try:
+            while request := await reader.readuntil(b'\r\n\r\n'):
+                lines = request.decode('ascii').split('\r\n')
+                method, path, _ = lines[0].split(' ')
+                if method == 'POST':
+                    headers = dict(line.lower().split(':', 1) for line in lines[1:] if ':' in line)
+                    await reader.readexactly(int(headers['content-length']))
+                    if writer in connections:
+                        return
+                    connections.append(writer)
+                    port = writer.get_extra_info('sockname')[1]
+                    didl = recording_xml('<av:COGCount>1</av:COGCount>', resource_url=f'http://127.0.0.1:{port}/media')
+                    body = (
+                        f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
+                        f'<u:BrowseResponse xmlns:u="{_CDS}"><Result>{escape(didl)}</Result><NumberReturned>1</NumberReturned>'
+                        '<TotalMatches>1</TotalMatches></u:BrowseResponse></s:Body></s:Envelope>'
+                    ).encode()
+                else:
+                    body = description if path == '/description.xml' else b'<scpd/>'
+                # Keep-alive is intentional even if the client sends Connection: close
+                writer.write(
+                    f'HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\nConnection: keep-alive\r\n\r\n'.encode()
+                    + (body if method != 'HEAD' else b'')
+                )
+                await writer.drain()
+        except asyncio.IncompleteReadError:
+            pass
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    async with await asyncio.start_server(handle, '127.0.0.1', 0) as source:
+        location = f'http://127.0.0.1:{source.sockets[0].getsockname()[1]}/description.xml'
+        result = await asyncio.to_thread(
+            CliRunner().invoke, app, ['dump', str(tmp_path), '--mask-private', '--server', location]
+        )
+    assert result.exit_code == 0, result.output
+    assert len(connections) >= 2
+    assert (tmp_path / 'recording-01.xml').is_file()
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize('count', ['10', '1', 'CF', '-1', None])
 async def test_cli_panasonic_fetches_parent_only_for_missing_copy_count(count: str | None) -> None:
     """Known counts avoid a full folder scan, while omitted counts retain the listing fallback."""

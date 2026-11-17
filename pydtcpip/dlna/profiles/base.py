@@ -77,23 +77,23 @@ class Profile:
     resource_elements: tuple[str, ...] | None = None
     # Expose recorder-provided display details without changing the original attributes
     read_resource_details: Callable[[Resource], Resource] | None = None
-    # Headers required by the family's SOAP server, without changing other HTTP clients
-    soap_headers: tuple[tuple[str, str], ...] | None = None
+    # Whether the family's SOAP server accepts requests on a reused TCP connection
+    reuse_soap_connections: bool | None = None
 
-    def resolve_soap_headers(self) -> dict[str, str]:
+    def allows_soap_connection_reuse(self) -> bool:
         """
-        Resolve SOAP request headers through the profile tree.
+        Resolve the SOAP connection policy through the profile tree.
 
         Returns:
-            dict[str, str]: Headers required by the nearest family, or an empty mapping
+            bool: Whether to reuse connections for SOAP requests (defaults to True)
         """
 
         profile: Profile | None = self
         while profile is not None:
-            if profile.soap_headers is not None:
-                return dict(profile.soap_headers)
+            if profile.reuse_soap_connections is not None:
+                return profile.reuse_soap_connections
             profile = profile.parent
-        return {}
+        return True
 
     def resolve_resource_elements(self) -> tuple[str, ...]:
         """

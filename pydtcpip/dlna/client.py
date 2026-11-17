@@ -331,7 +331,8 @@ class MediaServer:
                 action,
                 arguments,
                 timeout=self._timeout,
-                extra_headers=self.profile.resolve_soap_headers() | (extra_headers or {}),
+                reuse_connection=self.profile.allows_soap_connection_reuse(),
+                extra_headers=extra_headers,
                 on_response=responses.append if responses is not None else None,
             )
         except DLNAError as ex:
