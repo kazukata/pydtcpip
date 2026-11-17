@@ -75,6 +75,7 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 | Model / report | Discovery | Recording listings | Streaming (non-Move) | Move | Push dubbing reception |
 | --- | --- | --- | --- | --- | --- |
 | [Sony nasne CECH-ZNR1J](https://github.com/tsukumijima/pydtcpip/issues/3) | Reported | Reported | Unverified | Unverified | Not supported |
+| [Sony nasne (model unspecified)](https://github.com/tsukumijima/pydtcpip/issues/16) | Reported (API) | Reported (API) | Reported (DR and 3x, API) | Unverified | Unverified |
 | [Buffalo nasne NS-N100](https://github.com/tsukumijima/pydtcpip/issues/4) | Reported ([see note](#model-specific-notes)) | Reported | Unverified | Unverified | Not supported |
 | Toshiba REGZA 43Z570L | Verified | Verified | Verified | Refused to start | Verified |
 | [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
@@ -102,7 +103,10 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
   - If the nasne disappears from discovery even with the correct `--interface`, it may still be reachable by its device description URL.  
     Pass the URL to `info --server`.  
     In the TUI, press `+` and enter the URL.  
-    See the [reported case](https://github.com/tsukumijima/pydtcpip/issues/4#issuecomment-6931358437).
+    See the reports for [Windows](https://github.com/tsukumijima/pydtcpip/issues/4#issuecomment-6931358437) and [macOS](https://github.com/tsukumijima/pydtcpip/issues/17).
+  - Copy-controlled recordings received through nasne HOME migration have only the final Move available.  
+    pydtcpip displays `Copies remaining: 0` for these recordings because the count excludes that final Move.  
+    A successful final Move deletes the recording from the source nasne.
 - **REGZA TVs**
   - For the 43Z570L, run `receive` on the PC and start dubbing from the TV.  
     In testing, the TV refused to start a Move initiated from the PC.
