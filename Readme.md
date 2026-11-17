@@ -82,6 +82,8 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 | [Panasonic DMR-BXT3000](https://github.com/tsukumijima/pydtcpip/issues/7) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
+| [Panasonic VIERA TH-65LX950](https://github.com/tsukumijima/pydtcpip/issues/14) | Reported | Reported | [Reported](https://github.com/tsukumijima/pydtcpip/issues/14#issuecomment-6946179349) | Connection closed at start | Unverified |
+| [Panasonic DIGA DMR-4TS204S](https://github.com/tsukumijima/pydtcpip/issues/15) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Sony BDZ-ZW1500](https://github.com/tsukumijima/pydtcpip/issues/2) | Reported | Reported | Reported (10 seconds) | Unverified | Unverified |
 | [Sony BDZ-FBT2200](https://github.com/tsukumijima/pydtcpip/issues/12) | Unverified | Reported (API) | Reported | Unverified | Unverified |
 | [Sony PC TV Plus](https://github.com/tsukumijima/pydtcpip/issues/13) | Unverified | Reported with fresh connections | Reported (full recordings, API) | Unverified | Unverified |
@@ -105,6 +107,8 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
   - For the 43Z570L, run `receive` on the PC and start dubbing from the TV.  
     In testing, the TV refused to start a Move initiated from the PC.
   - Other REGZA TV models may also support only dubbing initiated from the TV.
+- **Panasonic DIGA DMR-4TS204S**
+  - If `info` lists only converted resources for a recording, use `--resource N` to select one of the listed resources explicitly.
 
 ### Family profiles
 
