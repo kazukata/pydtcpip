@@ -76,7 +76,7 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 | --- | --- | --- | --- | --- | --- |
 | [Sony nasne CECH-ZNR1J](https://github.com/tsukumijima/pydtcpip/issues/3) | Reported | Reported | Unverified | Unverified | Not supported |
 | [Buffalo nasne NS-N100](https://github.com/tsukumijima/pydtcpip/issues/4) | Reported (see below) | Reported | Unverified | Unverified | Not supported |
-| Toshiba REGZA 43Z570L | Verified | Verified | Verified | Verified | Verified |
+| Toshiba REGZA 43Z570L | Verified | Verified | Verified | Refused to start | Verified |
 | [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
 | Toshiba DBR-Z620 | Verified | Verified | Verified | Verified | Verified |
 | [Panasonic DMR-BXT3000](https://github.com/tsukumijima/pydtcpip/issues/7) | Reported | Reported | Unverified | Unverified | Unverified |
@@ -88,6 +88,8 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 | [Sharp AQUOS BD-W2700](https://github.com/tsukumijima/pydtcpip/issues/1) | Reported | Reported | Unverified | Unverified | Unverified |
 
 If discovery fails on Windows, select your PC's LAN address with `--interface`. For a Buffalo nasne that stops appearing in discovery, connect directly with `--server` and its device description URL.
+
+For the REGZA 43Z570L, run `receive` and start dubbing from the TV. In testing, the TV refused to start a Move initiated from the PC.
 
 For nasne, use client-initiated transfers rather than `receive`: its documented controls do not provide a way to send recordings to pydtcpip. The [nasne HOME migration feature](https://www.buffalo.jp/s3/guide/ns-n100/04/ja/recorder/dubbing.html) is started from the destination nasne.
 

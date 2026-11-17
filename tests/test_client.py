@@ -368,7 +368,7 @@ async def test_first_rejected_finalize_discards_received_data(
 async def test_rejected_move_initiation_explains_the_refusal(
     authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice, tmp_path: Path
 ) -> None:
-    """A source refusing to start a Move fails before any data is received, explaining the likely causes."""
+    """Report a refusal to start the Move before receiving any recording data."""
 
     path = tmp_path / 'recording.ts'
     async with (
@@ -377,9 +377,7 @@ async def test_rejected_move_initiation_explains_the_refusal(
         DTCPClient(sink_device.credentials(), timeout=5) as client,
     ):
         source.reject_initiate = True
-        with pytest.raises(
-            DTCPError, match=r'refused to start a Move of this recording.*status: 0x1.*while the source is recording'
-        ):
+        with pytest.raises(DTCPError, match=r'refused to start the Move.*status: 0x1'):
             await client.move(server.url, FileSink(path))
 
     assert source.log == ['mv_initiate_rejected']

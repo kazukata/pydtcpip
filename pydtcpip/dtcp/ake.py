@@ -285,12 +285,10 @@ async def authenticate(
         await ControlFrame.request(MV_INITIATE, procedure=0, exchange_key=0, role=0).send(writer)
         initiated = await ControlFrame.receive(reader, allow_rejected=True)
         if initiated.command != MV_INITIATE or initiated.is_accepted is False:
-            # REGZA 43Z570L refused every Move initiation with status 0x1 during a scheduled recording, while it still
-            ## authenticated streaming
+            # The initiation request carries no recording identifier, so the refusal applies to starting the session
             raise DTCPError(
-                f'The source refused to start a Move of this recording (response: 0x{initiated.ctype_response:x}, '
-                f'status: 0x{initiated.status:x}). This happens, for example, while the source is recording or '
-                'busy with another transfer; try again later.'
+                f'The source refused to start the Move (response: 0x{initiated.ctype_response:x}, '
+                f'status: 0x{initiated.status:x}). Check whether the source supports dubbing initiated from a PC.'
             )
 
     # Send the device certificate and nonce, then receive the source CHALLENGE
