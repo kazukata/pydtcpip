@@ -4,8 +4,10 @@ import asyncio
 import errno
 import logging
 import socket
+import sys
 import time
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
+from contextlib import asynccontextmanager
 from ipaddress import IPv4Address
 from urllib.parse import urlsplit
 
@@ -18,6 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 SSDP_ADDRESS = '239.255.255.250'
 SSDP_PORT = 1900
 MEDIA_SERVER_DEVICE_TYPE = 'urn:schemas-upnp-org:device:MediaServer:1'
+_LINUX_IP_MULTICAST_ALL = 49
 
 
 def _ipv4_interfaces() -> list[str]:
@@ -84,7 +87,9 @@ def _join_multicast_group(sock: socket.socket, interface: str) -> bool:
         )
     except OSError as ex:
         # Multiple addresses on one NIC share a multicast membership on Linux
-        ## An interface that cannot join the group must not prevent advertising on the remaining ones
+        if ex.errno == errno.EADDRINUSE:
+            return True
+        # An unusable interface must not prevent receiving multicast on the remaining ones
         _LOGGER.warning(
             f'Skipping the network interface {interface} because it cannot join the multicast group ({ex}).'
         )
@@ -93,7 +98,7 @@ def _join_multicast_group(sock: socket.socket, interface: str) -> bool:
 
 
 class SSDPResponse(BaseModel):
-    """Description location and identifiers for a device responding to M-SEARCH."""
+    """Description location and identifiers from an SSDP response or advertisement."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -127,19 +132,38 @@ def parse_ssdp_message(data: bytes) -> tuple[str, dict[str, str]]:
 
 
 class _SearchProtocol(asyncio.DatagramProtocol):
-    def __init__(self, on_response: Callable[[SSDPResponse], None]) -> None:
+    def __init__(self, on_response: Callable[[SSDPResponse], None], *, advertisement_target: str | None = None) -> None:
+        """
+        Set the handler for responses or advertisements on this socket.
+
+        Args:
+            on_response (Callable[[SSDPResponse], None]): Handler for each matching datagram
+            advertisement_target (str | None): Notification type to listen for (None accepts search responses)
+        """
+
         self._on_response = on_response
+        self._advertisement_target = advertisement_target
 
     def datagram_received(self, data: bytes, addr: tuple[str | int, ...]) -> None:
         start_line, headers = parse_ssdp_message(data)
-        # M-SEARCH responses start with `HTTP/1.1 200 OK` and carry the device description URL in LOCATION
-        if start_line.startswith('HTTP/1.1 200') is False or 'LOCATION' not in headers:
+        location = headers.get('LOCATION')
+        if not location:
             return
+        if self._advertisement_target is None:
+            if start_line.startswith('HTTP/1.1 200') is False:
+                return
+            target = headers.get('ST', '')
+        else:
+            if start_line != 'NOTIFY * HTTP/1.1' or headers.get('NTS') != 'ssdp:alive':
+                return
+            target = headers.get('NT', '')
+            if target != self._advertisement_target:
+                return
         self._on_response(
             SSDPResponse(
-                location=headers['LOCATION'],
+                location=location,
                 usn=headers.get('USN', ''),
-                search_target=headers.get('ST', ''),
+                search_target=target,
                 server=headers.get('SERVER'),
                 sender_address=str(addr[0]),
                 headers=headers,
@@ -234,6 +258,51 @@ async def search(
         for transport in transports:
             transport.close()
     return list(responses.values())
+
+
+@asynccontextmanager
+async def listen_for_advertisements(
+    on_advertisement: Callable[[SSDPResponse], None],
+    *,
+    interface: str | None = None,
+) -> AsyncGenerator[bool]:
+    """
+    Observe availability announcements for DLNA media servers while the context is open.
+
+    Args:
+        on_advertisement (Callable[[SSDPResponse], None]): Handler for matching announcements
+        interface (str | None): Local IPv4 address (None listens on every IPv4 network)
+
+    Yields:
+        bool: Whether the announcement socket is ready
+    """
+
+    interfaces = _ipv4_interfaces() if interface in (None, '0.0.0.0') else [interface]
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    transport: asyncio.DatagramTransport | None = None
+    try:
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if hasattr(socket, 'SO_REUSEPORT') is True:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            if sys.platform == 'linux':
+                # Keep --interface scoped to this socket's memberships when other UPnP software is running
+                sock.setsockopt(socket.IPPROTO_IP, _LINUX_IP_MULTICAST_ALL, 0)
+            sock.bind(('', SSDP_PORT))
+            joined_interfaces = [address for address in interfaces if _join_multicast_group(sock, address)]
+            if joined_interfaces:
+                transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+                    lambda: _SearchProtocol(on_advertisement, advertisement_target=MEDIA_SERVER_DEVICE_TYPE),
+                    sock=sock,
+                )
+        except OSError as ex:
+            _LOGGER.debug(f'Cannot listen for SSDP announcements ({ex}).')
+        yield transport is not None
+    finally:
+        if transport is None:
+            sock.close()
+        else:
+            transport.close()
 
 
 class _AdvertiserProtocol(asyncio.DatagramProtocol):

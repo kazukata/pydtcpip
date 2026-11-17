@@ -5,7 +5,7 @@ import logging
 import sys
 import unicodedata
 from collections.abc import Callable
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, aclosing
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -423,7 +423,7 @@ class PyDTCPIPApp(App[None]):
 
     @work(group='discovery', exclusive=True, exit_on_error=False)
     async def discover(self) -> None:
-        """Discover recorders and add new ones to the device list."""
+        """List search results first, then add recorders that announce themselves later."""
 
         self.notify('Searching for recorders...')
         try:
@@ -434,6 +434,13 @@ class PyDTCPIPApp(App[None]):
             return
         for server in servers:
             self._add_server(server)
+        if len(self._servers) == 0:
+            self.notify('Listening for recorder announcements. Press + to enter a device description URL.')
+        # Some recorders still announce themselves periodically after they stop answering searches
+        ## Allow a little more than one 30-second announcement interval
+        async with aclosing(self._dlna.listen_for_servers(timeout=35.0, interface=self._interface)) as announcements:
+            async for server in announcements:
+                self._add_server(server)
         if len(self._servers) == 0:
             self.notify(
                 f'No recorders found. Allow incoming UDP traffic on port {self._search_port}, '

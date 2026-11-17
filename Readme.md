@@ -95,6 +95,8 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
   - Start transfers from the PC.  
     The [nasne HOME migration feature](https://www.buffalo.jp/s3/guide/ns-n100/04/ja/recorder/dubbing.html) requires the destination nasne to start the transfer.
 - **Buffalo nasne NS-N100**
+  - If the nasne stops answering discovery requests, run `pydtcpip discover --timeout 35` to give its periodic announcements time to arrive.  
+    The TUI listens for these announcements in the background after the initial search.
   - If the nasne disappears from discovery even with the correct `--interface`, it may still be reachable by its device description URL.  
     Pass the URL to `info --server`.  
     In the TUI, press `+` and enter the URL.  
@@ -434,7 +436,9 @@ $ pydtcpip stream --server http://192.0.2.20:5000/description.xml --id RECORDING
 
 ### 8. Firewall and network settings
 
-Unicast discovery responses use UDP port 57000, while listening for incoming dubbing transfers uses UDP port 1900 and TCP port 57000.  
+Unicast discovery responses use UDP port 57000.  
+Device announcements and incoming dubbing discovery use UDP port 1900.  
+Incoming dubbing transfers use TCP port 57000.  
 If your firewall is enabled, allow incoming traffic from your home network (adjust the address range to match your home environment).
 
 The following command is an example of allowing listening on port 57000 in an environment with UFW enabled.

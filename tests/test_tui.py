@@ -172,7 +172,7 @@ async def _launch(
 
         dlna.discover = discover  # type: ignore[method-assign]
         runner = TransferRunner(DeviceStore(data_dir), stack)
-        app = PyDTCPIPApp(dlna=dlna, runner=runner, interface=None, search_port=0, directory=directory)
+        app = PyDTCPIPApp(dlna=dlna, runner=runner, interface='127.0.0.1', search_port=0, directory=directory)
         try:
             yield app, runner
         finally:

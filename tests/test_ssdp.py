@@ -13,7 +13,7 @@ from aiohttp import web
 from pydtcpip.dlna import ssdp
 from pydtcpip.dlna.client import DLNAClient
 from pydtcpip.receiver import DubbingReceiver
-from tests.fakes import FakeDevice, MemorySink
+from tests.fakes import FakeDevice, FakeRecorder, MemorySink, didl_container
 
 
 class _FakeNic:
@@ -345,6 +345,61 @@ async def test_receiver_releases_http_after_advertisement_failure(
                 assert 'pydtcpip' in await response.text()
     finally:
         await receiver.stop()
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(sys.platform != 'linux', reason='Exercises multicast on the Linux loopback interface')
+@pytest.mark.parametrize('listen_only', [False, True])
+async def test_discover_uses_media_server_announcements(monkeypatch: pytest.MonkeyPatch, listen_only: bool) -> None:
+    """Find and browse a recorder that sends alive announcements without answering searches."""
+
+    interface = '127.0.0.1'
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as port_socket:
+        port_socket.bind((interface, 0))
+        port = port_socket.getsockname()[1]
+    monkeypatch.setattr(ssdp, 'SSDP_PORT', port)
+
+    async with (
+        FakeRecorder({'0': [didl_container('recordings', '0', 'Recordings', 0)]}) as recorder,
+        FakeRecorder({}, udn='uuid:other-service') as other,
+        DLNAClient() as client,
+        asyncio.timeout(5),
+    ):
+
+        async def announce() -> None:
+            """Send availability notifications through loopback without receiving any search requests."""
+
+            loop = asyncio.get_running_loop()
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+                sender.setblocking(False)
+                sender.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(interface))
+                for _ in range(3):
+                    await asyncio.sleep(0.04)
+                    for target, subtype, location in (
+                        ('upnp:rootdevice', 'ssdp:alive', other.location),
+                        ('urn:schemas-upnp-org:device:MediaServer:1', 'ssdp:byebye', other.location),
+                        ('urn:schemas-upnp-org:device:MediaServer:1', 'ssdp:alive', recorder.location),
+                    ):
+                        await loop.sock_sendto(
+                            sender,
+                            (
+                                'NOTIFY * HTTP/1.1\r\n'
+                                f'HOST: {ssdp.SSDP_ADDRESS}:{port}\r\n'
+                                f'NT: {target}\r\nNTS: {subtype}\r\nLOCATION: {location}\r\n'
+                                'CACHE-CONTROL: max-age=1800\r\n\r\n'
+                            ).encode(),
+                            (ssdp.SSDP_ADDRESS, port),
+                        )
+
+        async with asyncio.TaskGroup() as tasks:
+            tasks.create_task(announce())
+            if listen_only:
+                servers = [server async for server in client.listen_for_servers(interface=interface, timeout=0.3)]
+            else:
+                servers = await client.discover(interface=interface, timeout=0.3)
+        assert [server.description.udn for server in servers] == [recorder.udn]
+        listing = await servers[0].browse('0')
+        assert [item.title for item in listing.objects] == ['Recordings']
 
 
 @pytest.mark.anyio

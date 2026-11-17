@@ -732,7 +732,7 @@ def main_options(
 
 @app.command()
 def discover(
-    timeout: Annotated[float, typer.Option(help='Seconds to wait for discovery responses')] = 3.0,
+    timeout: Annotated[float, typer.Option(help='Seconds to wait for discovery responses and announcements')] = 3.0,
     verbose: VerboseOption = False,
 ) -> None:
     """Find and list recorders (DLNA media servers) on your home network."""
