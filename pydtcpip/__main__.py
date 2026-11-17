@@ -1006,10 +1006,13 @@ def resume(
 def tui(
     output_dir: Annotated[
         Path | None,
-        typer.Argument(help='Directory for recordings saved by Move (defaults to the current directory)'),
+        typer.Argument(help='Directory for saved recordings (defaults to the current directory)'),
     ] = None,
 ) -> None:
-    """Browse recorders and move several recordings in an interactive terminal interface."""
+    """
+    Browse recorders and queue recordings for Move.
+    If a Move is refused at the start, you can save an original-quality stream when available.
+    """
 
     directory = (output_dir if output_dir is not None else Path.cwd()).expanduser()
     if directory.is_dir() is False:
