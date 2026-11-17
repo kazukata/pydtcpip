@@ -22,6 +22,8 @@ pydtcpip is a foundation library for recovering broadcast recordings from aging 
 
 - [Main features](#main-features)
 - [Supported devices](#supported-devices)
+  - [Model-specific notes](#model-specific-notes)
+  - [Family profiles](#family-profiles)
 - [Installation](#installation)
 - [Using the reference CLI implementation](#using-the-reference-cli-implementation)
   - [1. Preparing credentials](#1-preparing-credentials)
@@ -80,10 +82,10 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 | Toshiba REGZA 43Z570L | Verified | Verified | Verified | Refused to start | Verified |
 | [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
 | Toshiba DBR-Z620 | Verified | Verified | Verified | Verified | Verified |
+| [Panasonic VIERA TH-65LX950](https://github.com/tsukumijima/pydtcpip/issues/14) | Reported | Reported | [Reported](https://github.com/tsukumijima/pydtcpip/issues/14#issuecomment-6946179349) | Connection closed at start | Unverified |
 | [Panasonic DMR-BXT3000](https://github.com/tsukumijima/pydtcpip/issues/7) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
-| [Panasonic VIERA TH-65LX950](https://github.com/tsukumijima/pydtcpip/issues/14) | Reported | Reported | [Reported](https://github.com/tsukumijima/pydtcpip/issues/14#issuecomment-6946179349) | Connection closed at start | Unverified |
 | [Panasonic DIGA DMR-4TS204S](https://github.com/tsukumijima/pydtcpip/issues/15) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Sony BDZ-ZW1500](https://github.com/tsukumijima/pydtcpip/issues/2) | Reported | Reported | Reported (10 seconds) | Unverified | Unverified |
 | [Sony BDZ-FBT2200](https://github.com/tsukumijima/pydtcpip/issues/12) | Unverified | Reported (API) | Reported | Unverified | Unverified |
@@ -311,6 +313,8 @@ If the transfer is interrupted before finalization is requested, the Move is can
 > If the source's remaining copy count has decreased or the recording has been deleted, the Move has already been finalized on the source.
 
 ### 4. Browsing recorders and moving recordings interactively
+
+<img width="100%" alt="pydtcpip tui screenshot" src="https://github.com/user-attachments/assets/170f6577-f90b-4c82-828d-963b9159afff" /><br>
 
 **The `tui` subcommand provides the functions of `discover`, `info`, `move` and `resume` together in an interactive interface.**  
 Recorders found on the network appear on the left, the folders and recordings of the selected recorder in the middle, and details of the highlighted recording on the right.  
