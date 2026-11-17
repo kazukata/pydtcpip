@@ -351,7 +351,7 @@ async def test_receiver_releases_http_after_advertisement_failure(
 @pytest.mark.anyio
 @pytest.mark.skipif(sys.platform != 'linux', reason='Exercises multicast on the Linux loopback interface')
 async def test_discover_keeps_an_explicit_reply_port_at_the_ssdp_port(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Send searches from the configured port even when it matches the multicast port."""
+    """Use the configured reply port and release it before the announcement listener starts."""
 
     interface = '127.0.0.1'
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as monitor:
@@ -367,10 +367,15 @@ async def test_discover_keeps_an_explicit_reply_port_at_the_ssdp_port(monkeypatc
         )
         monitor.setblocking(False)
         async with asyncio.timeout(5), DLNAClient() as client, asyncio.TaskGroup() as tasks:
-            tasks.create_task(client.discover(interface=interface, port=port, timeout=0.2))
+            search = tasks.create_task(client.discover(interface=interface, port=port, timeout=0.2))
             request, source = await asyncio.get_running_loop().sock_recvfrom(monitor, 8192)
             assert request.startswith(b'M-SEARCH * HTTP/1.1\r\n')
             assert source[1] == port
+            # Match the TUI's handoff in the same task, with no HTTP lookups to yield after the search
+            assert await search == []
+            assert await client.discover(interface=interface, port=port, timeout=0.1) == []
+            async with ssdp.listen_for_advertisements(lambda _: None, interface=interface) as is_listening:
+                assert is_listening
 
 
 @pytest.mark.anyio

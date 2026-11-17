@@ -320,6 +320,7 @@ class PyDTCPIPApp(App[None]):
         self.theme = _THEME.name
         self._dlna = dlna
         self._runner = runner
+        self._discovery_lock = asyncio.Lock()
         self._interface = interface
         self._search_port = search_port
         self._directory = directory
@@ -424,6 +425,12 @@ class PyDTCPIPApp(App[None]):
 
     @work(group='discovery', exclusive=True, exit_on_error=False)
     async def discover(self) -> None:
+        """Start discovery once the previous worker has released its sockets."""
+
+        async with self._discovery_lock:
+            await self._discover_recorders()
+
+    async def _discover_recorders(self) -> None:
         """List search results first, then add recorders that announce themselves later."""
 
         self.notify('Searching for recorders...')

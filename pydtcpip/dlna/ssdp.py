@@ -143,6 +143,17 @@ class _SearchProtocol(asyncio.DatagramProtocol):
 
         self._on_response = on_response
         self._advertisement_target = advertisement_target
+        self.closed = asyncio.Event()
+
+    def connection_lost(self, exc: Exception | None) -> None:
+        """
+        Signal that the transport has finished closing its socket.
+
+        Args:
+            exc (Exception | None): Transport failure, if any
+        """
+
+        self.closed.set()
 
     def datagram_received(self, data: bytes, addr: tuple[str | int, ...]) -> None:
         start_line, headers = parse_ssdp_message(data)
@@ -199,7 +210,7 @@ async def search(
     # Responses arrive by unicast at the port that sent M-SEARCH
     ## Connection tracking cannot associate them with the multicast request, so restrictive firewalls drop them
     interfaces = _ipv4_interfaces() if interface in (None, '0.0.0.0') else [interface]
-    transports: list[asyncio.DatagramTransport] = []
+    endpoints: list[tuple[asyncio.DatagramTransport, _SearchProtocol]] = []
     unavailable_error: OSError | None = None
     try:
         for address in interfaces:
@@ -218,7 +229,7 @@ async def search(
                         'using an OS-assigned port (the firewall may drop responses).'
                     )
                     sock.bind((address, 0))
-                transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+                transport, protocol = await asyncio.get_running_loop().create_datagram_endpoint(
                     lambda: _SearchProtocol(on_response), sock=sock
                 )
             except OSError as ex:
@@ -232,9 +243,9 @@ async def search(
             except BaseException:
                 sock.close()
                 raise
-            transports.append(transport)
+            endpoints.append((transport, protocol))
         # Surface the address error when automatic discovery has no usable network
-        if len(transports) == 0:
+        if len(endpoints) == 0:
             if unavailable_error is not None:
                 raise unavailable_error
             raise OSError(errno.EADDRNOTAVAIL, 'No IPv4 interface is available for SSDP discovery.')
@@ -248,15 +259,17 @@ async def search(
             f'ST: {search_target}\r\n'
             '\r\n'
         ).encode()
-        for transport in transports:
+        for transport, _ in endpoints:
             transport.sendto(message, (SSDP_ADDRESS, SSDP_PORT))
         await asyncio.sleep(min(0.5, timeout / 4))
-        for transport in transports:
+        for transport, _ in endpoints:
             transport.sendto(message, (SSDP_ADDRESS, SSDP_PORT))
         await asyncio.sleep(timeout)
     finally:
-        for transport in transports:
+        for transport, _ in endpoints:
             transport.close()
+        # A subsequent announcement listener may need the same port
+        await asyncio.gather(*(protocol.closed.wait() for _, protocol in endpoints))
     return list(responses.values())
 
 
@@ -279,7 +292,7 @@ async def listen_for_advertisements(
 
     interfaces = _ipv4_interfaces() if interface in (None, '0.0.0.0') else [interface]
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    transport: asyncio.DatagramTransport | None = None
+    endpoint: tuple[asyncio.DatagramTransport, _SearchProtocol] | None = None
     try:
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -291,18 +304,20 @@ async def listen_for_advertisements(
             sock.bind(('', SSDP_PORT))
             joined_interfaces = [address for address in interfaces if _join_multicast_group(sock, address)]
             if joined_interfaces:
-                transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+                endpoint = await asyncio.get_running_loop().create_datagram_endpoint(
                     lambda: _SearchProtocol(on_advertisement, advertisement_target=MEDIA_SERVER_DEVICE_TYPE),
                     sock=sock,
                 )
         except OSError as ex:
             _LOGGER.debug(f'Cannot listen for SSDP announcements ({ex}).')
-        yield transport is not None
+        yield endpoint is not None
     finally:
-        if transport is None:
+        if endpoint is None:
             sock.close()
         else:
+            transport, protocol = endpoint
             transport.close()
+            await protocol.closed.wait()
 
 
 class _AdvertiserProtocol(asyncio.DatagramProtocol):
