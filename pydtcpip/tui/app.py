@@ -1441,8 +1441,9 @@ class PyDTCPIPApp(App[None]):
 
     @work(group='queue', exit_on_error=False)
     async def _run_queue(self) -> None:
-        """Move waiting entries one at a time, stopping for a decision after any unsuccessful Move."""
+        """Move waiting entries one at a time, keeping fallback choices for this queue only."""
 
+        stream_on_refusal: set[str] = set()
         try:
             while self._is_exit_requested is False:
                 item = next((item for item in self._queue if item.status == 'waiting'), None)
@@ -1454,7 +1455,7 @@ class PyDTCPIPApp(App[None]):
                 if item.is_cancelled_by_user is True:
                     self._skip_waiting()
                     break
-                if await self._decide_after_failure(item) is False:
+                if await self._decide_after_failure(item, stream_on_refusal) is False:
                     self._skip_waiting()
                     break
         finally:
@@ -1547,12 +1548,13 @@ class PyDTCPIPApp(App[None]):
             client, item.resource, item.output, media_server=server, sidecar=sidecar, on_event=on_event
         )
 
-    async def _decide_after_failure(self, item: QueueItem) -> bool:
+    async def _decide_after_failure(self, item: QueueItem, stream_on_refusal: set[str]) -> bool:
         """
         Explain an unsuccessful Move and ask whether to continue, resuming first when finalization was interrupted.
 
         Args:
             item (QueueItem): Entry that did not complete
+            stream_on_refusal (set[str]): Device UDNs whose refused Moves can be saved via stream in this queue
 
         Returns:
             bool: True to continue with the next entry
@@ -1561,11 +1563,14 @@ class PyDTCPIPApp(App[None]):
         while True:
             detail = [(item.message, 'dim')] if item.message else []
             title = f'{STATUS_LABELS[item.status]}: {item.title}'
+            udn = item.key[0] if item.key is not None else None
             stream = (
                 item.recording.original_resource
                 if item.status == 'initiation_rejected' and item.recording is not None
                 else None
             )
+            can_save_stream = stream is not None and stream.is_original_quality is True
+            repeat_label: str | None = None
             if item.status == 'resume_required':
                 body = [
                     (
@@ -1590,7 +1595,7 @@ class PyDTCPIPApp(App[None]):
                     text = 'The source did not finalize the Move and kept its copy. The received data was deleted.'
                 body = [(text, 'yellow'), *detail]
                 choices = [('skip', 'Continue with the next recording', 'primary'), ('stop', 'Stop the queue', 'error')]
-            elif stream is not None and stream.is_original_quality is True:
+            elif can_save_stream is True:
                 title = 'The source refused to start dubbing'
                 body = [
                     (item.title, 'bold'),
@@ -1605,6 +1610,14 @@ class PyDTCPIPApp(App[None]):
                     ('skip', 'Skip recording', 'default'),
                     ('stop', 'Stop the queue', 'error'),
                 ]
+                if udn is not None and any(
+                    entry.status == 'waiting'
+                    and entry.is_resume is False
+                    and entry.key is not None
+                    and entry.key[0] == udn
+                    for entry in self._queue
+                ):
+                    repeat_label = 'Stream later recordings this device refuses in this queue'
             else:
                 text = (
                     'Streaming leaves the source recording and copy count unchanged.'
@@ -1615,7 +1628,13 @@ class PyDTCPIPApp(App[None]):
                 )
                 body = [(text, 'yellow'), *detail]
                 choices = [('skip', 'Continue with the next recording', 'primary'), ('stop', 'Stop the queue', 'error')]
-            choice = await self.push_screen_wait(ChoiceScreen(title, body, choices))
+            if can_save_stream is True and udn in stream_on_refusal:
+                choice = 'stream'
+            else:
+                screen = ChoiceScreen(title, body, choices, repeat_label=repeat_label)
+                choice = await self.push_screen_wait(screen)
+                if choice == 'stream' and screen.repeat_choice is True and udn is not None:
+                    stream_on_refusal.add(udn)
             if choice == 'stream' and stream is not None:
                 item.stream_resource = stream
                 item.copies_before = None

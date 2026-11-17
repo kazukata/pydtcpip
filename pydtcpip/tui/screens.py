@@ -11,7 +11,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Input, Label, OptionList, Static
+from textual.widgets import Button, Checkbox, DataTable, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
 
 
@@ -65,6 +65,7 @@ class ChoiceScreen(ModalScreen[str | None]):
         choices: list[tuple[str, str, ButtonVariant]],
         *,
         default: str | None = None,
+        repeat_label: str | None = None,
     ) -> None:
         """
         Configure the message and buttons.
@@ -74,6 +75,7 @@ class ChoiceScreen(ModalScreen[str | None]):
             body (list[tuple[str, str]]): Paragraphs with Rich styles
             choices (list[tuple[str, str, ButtonVariant]]): Button IDs, labels and variants
             default (str | None): Button focused initially (the first if None)
+            repeat_label (str | None): Label for an optional checkbox to repeat the selected action
         """
 
         super().__init__()
@@ -81,12 +83,16 @@ class ChoiceScreen(ModalScreen[str | None]):
         self._body = body
         self._choices = choices
         self._default = default if default is not None else choices[0][0]
+        self._repeat_label = repeat_label
+        self.repeat_choice = False
 
     def compose(self) -> ComposeResult:
         with Vertical(classes='dialog'):
             yield Label(Text(self._title), classes='dialog-title')
             for text, style in self._body:
                 yield Static(Text(text, style=style), classes='dialog-text')
+            if self._repeat_label is not None:
+                yield Checkbox(self._repeat_label, id='repeat-choice')
             with Horizontal(classes='dialog-buttons'):
                 for choice_id, label, variant in self._choices:
                     yield Button(label, id=f'choice-{choice_id}', variant=variant)
@@ -96,6 +102,8 @@ class ChoiceScreen(ModalScreen[str | None]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id is not None:
+            if self._repeat_label is not None:
+                self.repeat_choice = self.query_one('#repeat-choice', Checkbox).value
             self.dismiss(event.button.id.removeprefix('choice-'))
 
     def action_dismiss_choice(self) -> None:

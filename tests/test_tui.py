@@ -11,7 +11,7 @@ import pytest
 from textual import events
 from textual.coordinate import Coordinate
 from textual.messages import InBandWindowResize
-from textual.widgets import Button, DataTable, Input
+from textual.widgets import Button, Checkbox, DataTable, Input
 from typer.testing import CliRunner
 
 from pydtcpip.__main__ import app as cli_app
@@ -464,6 +464,72 @@ async def test_save_original_stream_after_move_refusal(
         assert all('BLKMove.dtcp.com' not in headers for _, headers in media.requests)
         assert not {'finalize', 'complete', 'cancel'}.intersection(source.log)
         assert source.errors == []
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures('credentials')
+@pytest.mark.parametrize('repeat', [False, True])
+async def test_stream_fallback_choice_applies_only_to_current_queue(
+    authority: FakeAuthority, source_device: FakeDevice, tmp_path: Path, repeat: bool
+) -> None:
+    """Save the first recording, apply consent to the second refusal only if selected, then start a new queue."""
+
+    content = b'Original recording ' * 2000
+    async with FakeSourceAKE(authority, source_device) as source, FakeMediaServer(source, content) as media:
+        source.reject_initiate = True
+        resource = dtcp_resource(media.url)
+        folders = {'0': [didl_recording(f'A{index}', '0', str(index), resource) for index in range(1, 4)]}
+        async with (
+            FakeRecorder(folders) as recorder,
+            _launch(recorder, tmp_path, tmp_path / 'device') as (app, _),
+            app.run_test(size=(100, 30)) as pilot,
+        ):
+            await _wait(pilot.pause, lambda: _table(app).row_count == 3)
+            await pilot.press('enter')
+            for title in ('1', '2'):
+                _highlight(app, title)
+                await pilot.press('space')
+            await pilot.press('m')
+            await _wait(pilot.pause, lambda: isinstance(app.screen, ConfirmMoveScreen))
+            app.screen.query_one('#confirm-move', Button).press()
+            await _wait(
+                pilot.pause, lambda: isinstance(app.screen, ChoiceScreen) and bool(app.screen.query('#repeat-choice'))
+            )
+            checkbox = app.screen.query_one('#repeat-choice', Checkbox)
+            assert checkbox.value is False
+            if repeat is True:
+                assert await pilot.click('#repeat-choice') is True
+            app.screen.query_one('#choice-stream', Button).press()
+            if repeat is False:
+                await _wait(
+                    pilot.pause,
+                    lambda: (
+                        source.log.count('mv_initiate_rejected') == 2
+                        and isinstance(app.screen, ChoiceScreen)
+                        and bool(app.screen.query('#choice-stream'))
+                    ),
+                )
+                assert media.count('GET') == 1
+                app.screen.query_one('#choice-stream', Button).press()
+
+            queue: DataTable[str] = app.query_one('#queue', DataTable)
+            await _wait(pilot.pause, lambda: all(str(queue.get_row_at(i)[0]) == 'Saved via stream' for i in range(2)))
+            await pilot.pause()
+            assert len(list(tmp_path.glob('*.m2ts'))) == 2
+            assert media.count('GET') == 2
+
+            _table(app).focus()
+            _highlight(app, '3')
+            await pilot.press('space', 'm')
+            await _wait(pilot.pause, lambda: isinstance(app.screen, ConfirmMoveScreen))
+            app.screen.query_one('#confirm-move', Button).press()
+            await _wait(
+                pilot.pause, lambda: isinstance(app.screen, ChoiceScreen) and bool(app.screen.query('#choice-stop'))
+            )
+            assert app.screen.query('#choice-stream')
+            assert not app.screen.query('#repeat-choice')
+            assert source.log.count('mv_initiate_rejected') == 3
+            assert media.count('GET') == 2
 
 
 @pytest.mark.anyio
