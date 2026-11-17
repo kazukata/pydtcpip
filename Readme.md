@@ -87,7 +87,9 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 | [Sony PC TV Plus](https://github.com/tsukumijima/pydtcpip/issues/13) | Unverified | Reported with fresh connections | Reported (full recordings, API) | Unverified | Unverified |
 | [Sharp AQUOS BD-W2700](https://github.com/tsukumijima/pydtcpip/issues/1) | Reported | Reported | Unverified | Unverified | Unverified |
 
-If discovery fails on Windows, select your PC's LAN address with `--interface`. For a Buffalo nasne that stops appearing in discovery, connect directly with `--server` and its device description URL.
+If discovery fails on Windows, select your PC's LAN address with `--interface`.
+
+A Buffalo nasne NS-N100 can stay online while it stops answering discovery requests. If it disappears from the list even with the correct `--interface`, pass its device description URL to `info --server`. In the TUI, press `+` and enter the URL. See the [reported case](https://github.com/tsukumijima/pydtcpip/issues/4#issuecomment-6931358437).
 
 For the REGZA 43Z570L, run `receive` and start dubbing from the TV. In testing, the TV refused to start a Move initiated from the PC.
 
