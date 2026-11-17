@@ -44,6 +44,7 @@ from pydtcpip.operations import (
     resume_state_path,
     run_move,
     run_resume,
+    save_stream,
 )
 from pydtcpip.store import DeviceStore
 from pydtcpip.tui import display
@@ -695,11 +696,11 @@ class PyDTCPIPApp(App[None]):
             return Text('Q', style='cyan')
         if item.is_active is True:
             return Text('M', style='bold yellow')
-        if item.status == 'completed':
+        if item.status in ('completed', 'stream_saved'):
             return Text('D', style='green')
         if item.status in ('resume_required', 'finalize_rejected'):
             return Text('R' if item.status == 'resume_required' else 'C', style='bold red')
-        if item.status == 'failed':
+        if item.status in ('failed', 'initiation_rejected'):
             return Text('F', style='red')
         return Text('S', style='dim')
 
@@ -1448,7 +1449,7 @@ class PyDTCPIPApp(App[None]):
                 if item is None:
                     break
                 await self._run_item(item)
-                if item.status == 'completed' or self._exit_requested() is True:
+                if item.status in ('completed', 'stream_saved') or self._exit_requested() is True:
                     continue
                 if item.is_cancelled_by_user is True:
                     self._skip_waiting()
@@ -1498,6 +1499,8 @@ class PyDTCPIPApp(App[None]):
         self._runner.active = None
         if item.status == 'completed':
             _LOGGER.info(f'Move completed: {item.output}')
+        elif item.status == 'stream_saved':
+            _LOGGER.info(f'Saved via stream: {item.output}')
         else:
             _LOGGER.warning(
                 f'{STATUS_LABELS[item.status]}: {item.title}' + (f' ({item.message})' if item.message else '')
@@ -1525,6 +1528,10 @@ class PyDTCPIPApp(App[None]):
             resume_state = load_resume_state(item.output)
             sidecar = load_resume_sidecar(item.output)
             return await run_resume(client, item.output, resume_state, sidecar=sidecar, on_event=on_event)
+        if item.stream_resource is not None:
+            return await save_stream(
+                client, item.stream_resource, item.output, sidecar=load_resume_sidecar(item.output), on_event=on_event
+            )
         if item.key is None or item.recording is None or item.resource is None:
             raise ValueError('The queued recording has no resource to move.')
         server = self._servers[item.key[0]]
@@ -1553,6 +1560,12 @@ class PyDTCPIPApp(App[None]):
 
         while True:
             detail = [(item.message, 'dim')] if item.message else []
+            title = f'{STATUS_LABELS[item.status]}: {item.title}'
+            stream = (
+                item.recording.original_resource
+                if item.status == 'initiation_rejected' and item.recording is not None
+                else None
+            )
             if item.status == 'resume_required':
                 body = [
                     (
@@ -1577,17 +1590,41 @@ class PyDTCPIPApp(App[None]):
                     text = 'The source did not finalize the Move and kept its copy. The received data was deleted.'
                 body = [(text, 'yellow'), *detail]
                 choices = [('skip', 'Continue with the next recording', 'primary'), ('stop', 'Stop the queue', 'error')]
+            elif stream is not None and stream.is_original_quality is True:
+                title = 'The source refused to start dubbing'
+                body = [
+                    (item.title, 'bold'),
+                    (
+                        'Save it via stream in its original quality. The recording and copy count stay unchanged '
+                        'on the source.',
+                        '',
+                    ),
+                ]
+                choices = [
+                    ('stream', 'Save in original quality', 'primary'),
+                    ('skip', 'Skip recording', 'default'),
+                    ('stop', 'Stop the queue', 'error'),
+                ]
             else:
                 text = (
-                    'The source may have consumed a copy.'
+                    'Streaming leaves the source recording and copy count unchanged.'
+                    if item.stream_resource is not None
+                    else 'The source may have consumed a copy.'
                     if item.is_committing is True
                     else 'Finalization was not requested, so the source has not consumed a copy.'
                 )
                 body = [(text, 'yellow'), *detail]
                 choices = [('skip', 'Continue with the next recording', 'primary'), ('stop', 'Stop the queue', 'error')]
-            choice = await self.push_screen_wait(
-                ChoiceScreen(f'{STATUS_LABELS[item.status]}: {item.title}', body, choices)
-            )
+            choice = await self.push_screen_wait(ChoiceScreen(title, body, choices))
+            if choice == 'stream' and stream is not None:
+                item.stream_resource = stream
+                item.copies_before = None
+                await self._run_item(item)
+                if item.status == 'stream_saved' or self._exit_requested() is True:
+                    return True
+                if item.is_cancelled_by_user is True:
+                    return False
+                continue
             if choice == 'resume':
                 item.is_resume = True
                 await self._run_item(item)
@@ -1639,7 +1676,14 @@ class PyDTCPIPApp(App[None]):
         self.push_screen(
             ChoiceScreen(
                 f'Cancel the transfer of {item.title}?',
-                [('Finalization has not been requested, so cancelling keeps the copy on the source.', '')],
+                [
+                    (
+                        'Cancelling leaves the recording and copy count unchanged.'
+                        if item.stream_resource is not None
+                        else 'Finalization has not been requested, so cancelling keeps the copy on the source.',
+                        '',
+                    )
+                ],
                 [('cancel', 'Cancel the transfer', 'error'), ('back', 'Keep transferring', 'primary')],
                 default='back',
             ),
@@ -1678,8 +1722,10 @@ class PyDTCPIPApp(App[None]):
                 'Quit while transferring?',
                 [
                     (
-                        f'{item.title} is being transferred. Finalization has not been requested, so cancelling keeps '
-                        'the copy on the source.',
+                        f'{item.title} is being saved via stream. Cancelling keeps the recording on the source.'
+                        if item.stream_resource is not None
+                        else f'{item.title} is being transferred. Finalization has not been requested, so cancelling '
+                        'keeps the copy on the source.',
                         '',
                     ),
                 ],
@@ -1758,9 +1804,15 @@ class PyDTCPIPApp(App[None]):
         for index, item in enumerate(self._queue):
             key = str(index)
             status = Text(STATUS_LABELS[item.status])
-            if item.status == 'completed':
+            if item.status in ('completed', 'stream_saved'):
                 status.stylize('green')
-            elif item.status in ('resume_required', 'finalize_rejected', 'failed', 'cancel_unconfirmed'):
+            elif item.status in (
+                'resume_required',
+                'finalize_rejected',
+                'initiation_rejected',
+                'failed',
+                'cancel_unconfirmed',
+            ):
                 status.stylize('bold red' if item.status == 'resume_required' else 'red')
             elif item.is_committing is True and item.is_active is True:
                 status.stylize('bold yellow')

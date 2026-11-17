@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from pydtcpip.errors import MoveCommitmentRejectedError
+from pydtcpip.errors import MoveCommitmentRejectedError, MoveInitiationRejectedError
 from pydtcpip.events import (
     AuthenticationStarted,
     MoveCancelled,
@@ -36,6 +36,8 @@ type QueueStatus = Literal[
     'finalizing',
     'finalized',
     'completed',
+    'stream_saved',
+    'stream_cancelled',
     'cancel_requested',
     'cancelled',
     'cancel_unconfirmed',
@@ -43,6 +45,7 @@ type QueueStatus = Literal[
     'resume_required',
     'resuming',
     'finalize_rejected',
+    'initiation_rejected',
     'failed',
     'skipped',
 ]
@@ -57,6 +60,8 @@ STATUS_LABELS: dict[QueueStatus, str] = {
     'finalizing': 'Finalizing',
     'finalized': 'Finalized',
     'completed': 'Completed',
+    'stream_saved': 'Saved via stream',
+    'stream_cancelled': 'Stream cancelled',
     'cancel_requested': 'Cancellation requested',
     'cancelled': 'Cancelled by source',
     'cancel_unconfirmed': 'Stopped (cancellation unconfirmed)',
@@ -64,6 +69,7 @@ STATUS_LABELS: dict[QueueStatus, str] = {
     'resume_required': 'Resume required',
     'resuming': 'Resuming finalization',
     'finalize_rejected': 'Finalization rejected',
+    'initiation_rejected': 'Move refused',
     'failed': 'Failed',
     'skipped': 'Not started',
 }
@@ -72,7 +78,7 @@ STATUS_LABELS: dict[QueueStatus, str] = {
 @dataclass
 class QueueItem:
     """
-    A recording queued for Move, or an interrupted Move awaiting resumption.
+    A recording queued for Move, including resumption or an original-quality stream chosen after a refusal.
     The committing flag is set once a finalize request may be sent and stays set until the transfer ends,
     so neither cancellation nor quitting can drop the control connection afterward.
     """
@@ -83,6 +89,7 @@ class QueueItem:
     key: tuple[str, str] | None = None
     recording: Recording | None = None
     resource: Resource | None = None
+    stream_resource: Resource | None = None
     is_resume: bool = False
     status: QueueStatus = 'waiting'
     is_committing: bool = False
@@ -110,11 +117,14 @@ class QueueItem:
         return self.status not in (
             'waiting',
             'completed',
+            'stream_saved',
+            'stream_cancelled',
             'cancelled',
             'cancel_unconfirmed',
             'stopped',
             'resume_required',
             'finalize_rejected',
+            'initiation_rejected',
             'failed',
             'skipped',
         )
@@ -127,7 +137,7 @@ class QueueItem:
             self.status = 'resuming'
             self.is_committing = True
         else:
-            self.status = 'metadata'
+            self.status = 'authenticating' if self.stream_resource is not None else 'metadata'
             self.is_committing = False
 
     def apply(self, event: TransferEvent) -> None:
@@ -187,10 +197,15 @@ class QueueItem:
         """
 
         if error is None:
-            self.status = 'completed'
-            self.completed_at = datetime.now(UTC)
+            if self.stream_resource is not None:
+                self.status = 'stream_saved'
+            else:
+                self.status = 'completed'
+                self.completed_at = datetime.now(UTC)
         elif isinstance(error, asyncio.CancelledError):
-            if self.status == 'cancel_requested':
+            if self.stream_resource is not None:
+                self.status = 'stream_cancelled'
+            elif self.status == 'cancel_requested':
                 # The cancellation was sent but not acknowledged; finalization was never requested
                 self.status = 'cancel_unconfirmed'
             elif self.status in ('waiting', 'metadata', 'authenticating'):
@@ -205,6 +220,8 @@ class QueueItem:
             self.message = str(error) or type(error).__name__
             if has_resume_state is True:
                 self.status = 'resume_required'
+            elif isinstance(error, MoveInitiationRejectedError) and self.is_resume is False:
+                self.status = 'initiation_rejected'
             elif self.status not in ('cancelled', 'finalize_rejected'):
                 self.status = 'failed'
 
@@ -222,6 +239,8 @@ class QueueItem:
         if self.total_bytes:
             # Compare received HTTP bytes with an HTTP total, since encryption makes the body larger than the file
             received = self.http_bytes if self.is_total_http is True else written
-            percent = 100 if self.status == 'completed' else min(100, received * 100 // self.total_bytes)
+            percent = (
+                100 if self.status in ('completed', 'stream_saved') else min(100, received * 100 // self.total_bytes)
+            )
             return f'{format_bytes(written)} written ({percent}%)'
         return f'{format_bytes(written)} written'

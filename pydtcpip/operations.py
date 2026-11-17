@@ -1,5 +1,6 @@
 """Operations shared by the CLI and the TUI for resource selection, Move, resumption and copy-count queries."""
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -10,8 +11,8 @@ from pydantic import ValidationError
 
 from pydtcpip.client import DTCPClient
 from pydtcpip.dlna.client import MediaServer
-from pydtcpip.errors import DLNAError
-from pydtcpip.events import EventCallback, TransferEvent, dispatch_event
+from pydtcpip.errors import DLNAError, DTCPError
+from pydtcpip.events import EventCallback, MediaInfoReceived, TransferEvent, dispatch_event
 from pydtcpip.metadata import MetadataSidecar
 from pydtcpip.models import Container, MoveResumeState, ProtectionValue, Recording, RecordingMetadata, Resource
 from pydtcpip.sinks import FileSink
@@ -334,6 +335,62 @@ async def run_resume(
         on_resume_state=lambda state: save_resume_state(path, state),
         on_event=_archive_events(sidecar, on_event),
     )
+
+
+async def save_stream(
+    client: DTCPClient,
+    target: Resource,
+    output: Path,
+    *,
+    sidecar: MetadataSidecar | None,
+    on_event: EventCallback,
+) -> int:
+    """
+    Save an entire recording via ordinary streaming without changing the source copy count.
+
+    Args:
+        client (DTCPClient): Client holding the source authentication credentials
+        target (Resource): Streaming resource in the recording's stored format
+        output (Path): Destination for the recording
+        sidecar (MetadataSidecar | None): Existing archive from the attempted Move
+        on_event (EventCallback): Callback for receiving progress and media information
+
+    Returns:
+        int: Number of recording bytes saved
+    """
+
+    sink = FileSink(output)
+    expected_size = target.cleartext_size
+    archive = _archive_events(sidecar, on_event)
+
+    async def handle_event(event: TransferEvent) -> None:
+        await dispatch_event(archive, event)
+        if isinstance(event, MediaInfoReceived) and event.method == 'GET':
+            media = event.media_info
+            is_chunked = any(
+                name.lower() == 'transfer-encoding' and 'chunked' in value.lower()
+                for name, value in media.headers.items()
+            )
+            # With no HTTP framing or known recording size, an early disconnect looks like a complete recording
+            if expected_size is None and media.content_length is None and is_chunked is False:
+                raise DTCPError('The source did not report enough information to verify receipt of the full recording.')
+
+    try:
+        written = await client.stream(target, sink.write, on_event=handle_event)
+        if written == 0 or (expected_size is not None and written != expected_size):
+            raise DTCPError('The stream ended without delivering the expected recording data.')
+        await sink.persist()
+    except BaseException:
+        await sink.discard()
+        raise
+
+    # Once publishing the file begins, wait for the result even if the transfer is cancelled
+    commit = asyncio.create_task(sink.commit())
+    try:
+        await asyncio.shield(commit)
+    except asyncio.CancelledError:
+        await commit
+    return written
 
 
 async def query_copy_count(

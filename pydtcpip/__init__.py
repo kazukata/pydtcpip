@@ -6,7 +6,14 @@ from pydtcpip.dlna.extensions import MetadataExtension, NasneExtension, SonyExte
 from pydtcpip.dlna.scpd import ServiceArgument, ServiceDescription
 from pydtcpip.dtcp.crypto import DeviceCredentials
 from pydtcpip.dtcp.srm import SRM
-from pydtcpip.errors import ClientNotAllowedError, DLNAError, DTCPError, MoveCommitmentRejectedError, PyDTCPIPError
+from pydtcpip.errors import (
+    ClientNotAllowedError,
+    DLNAError,
+    DTCPError,
+    MoveCommitmentRejectedError,
+    MoveInitiationRejectedError,
+    PyDTCPIPError,
+)
 from pydtcpip.models import (
     Chapter,
     ChapterList,
@@ -55,6 +62,7 @@ __all__ = [
     'MetadataResponse',
     'MetadataValue',
     'MoveCommitmentRejectedError',
+    'MoveInitiationRejectedError',
     'MoveResumeState',
     'NasneExtension',
     'ProtectionValue',

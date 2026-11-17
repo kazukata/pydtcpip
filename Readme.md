@@ -286,7 +286,7 @@ If the transfer is interrupted before finalization is requested, the Move is can
 
 **The `tui` subcommand provides the functions of `discover`, `info`, `move` and `resume` together in an interactive interface.**  
 Recorders found on the network appear on the left, the folders and recordings of the selected recorder in the middle, and details of the highlighted recording on the right.  
-Streaming (`stream`), receiving push dubbing (`receive`) and diagnostic exports (`dump`) are not part of the interface; use those subcommands directly.
+For streaming to a player, receiving push dubbing or exporting diagnostics, use `stream`, `receive` or `dump` directly.
 
 ```bash
 # Save moved recordings in the current directory
@@ -323,7 +323,10 @@ Recordings whose destination files already exist and recordings that the device 
 > **Each Move consumes one copy from the source, and a recording with only the final Move left, or one that prohibits copying, is deleted from the source.**  
 > Check the warnings on the confirmation screen before starting.
 
-If a Move does not complete, the queue stops and explains whether the source may have consumed a copy.  
+If a Move does not complete, the queue pauses and explains whether the source may have consumed a copy.
+
+If the source refuses to start a Move and offers an original-quality stream, choose **Save in original quality**. The source recording and its copy count stay unchanged. The queue labels the result **Saved via stream**.
+
 A Move interrupted after finalization was requested appears in the transfer list as requiring resumption; press `Enter` on it to finalize without receiving the recording again.  
 Sources that discard their resume information after a disconnection during finalization, such as DBR-Z620, reject this resumption; see the note in [section 3](#3-saving-recordings-from-a-pc-through-move-transfers) for what is kept and how to check whether the Move was finalized.  
 Quitting during finalization waits until it finishes, and quitting during reception asks before cancelling the transfer, which keeps the copy on the source.

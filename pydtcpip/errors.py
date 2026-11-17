@@ -42,6 +42,10 @@ class DTCPError(PyDTCPIPError):
     """DTCP-IP authentication, protected packet processing, or Move failed."""
 
 
+class MoveInitiationRejectedError(DTCPError):
+    """The source explicitly rejected Move initiation before authentication or receipt of recording data."""
+
+
 class MoveCommitmentRejectedError(DTCPError):
     """
     The source rejected a Move finalize request.

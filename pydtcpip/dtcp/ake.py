@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from pydtcpip.dtcp.crypto import DTCP_CURVE, DeviceCredentials, device_id_of, verify_certificate
 from pydtcpip.dtcp.srm import SRM
-from pydtcpip.errors import DTCPError
+from pydtcpip.errors import DTCPError, MoveInitiationRejectedError
 from pydtcpip.events import (
     AuthenticationCompleted,
     AuthenticationStarted,
@@ -46,6 +46,7 @@ MV_CANCEL = 0x28
 # Control frame ctype / response values
 CONTROL = 0x0
 ACCEPTED = 0x9
+REJECTED = 0xA
 
 _FRAME_HEADER_SIZE = 11
 
@@ -284,11 +285,15 @@ async def authenticate(
     if is_move is True:
         await ControlFrame.request(MV_INITIATE, procedure=0, exchange_key=0, role=0).send(writer)
         initiated = await ControlFrame.receive(reader, allow_rejected=True)
-        if initiated.command != MV_INITIATE or initiated.is_accepted is False:
-            # The initiation request carries no recording identifier, so the refusal applies to starting the session
-            raise DTCPError(
+        if initiated.command == MV_INITIATE and initiated.ctype_response == REJECTED:
+            raise MoveInitiationRejectedError(
                 f'The source refused to start the Move (response: 0x{initiated.ctype_response:x}, '
                 f'status: 0x{initiated.status:x}). Check whether the source supports dubbing initiated from a PC.'
+            )
+        if initiated.command != MV_INITIATE or initiated.is_accepted is False:
+            raise DTCPError(
+                f'Unexpected response to Move initiation (command: 0x{initiated.command:02x}, '
+                f'response: 0x{initiated.ctype_response:x}, status: 0x{initiated.status:x}).'
             )
 
     # Send the device certificate and nonce, then receive the source CHALLENGE

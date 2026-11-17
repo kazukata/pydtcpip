@@ -402,10 +402,68 @@ async def test_failed_move_stops_the_queue_until_continued(
                     assert 'has not consumed a copy' in ''.join(
                         str(widget.render()) for widget in app.screen.query('.dialog-text')
                     )
+                    assert not app.screen.query('#choice-stream')
                     app.screen.query_one('#choice-skip', Button).press()
                     await _wait(pilot.pause, lambda: queue[1].status == 'completed')
                     await pilot.press('q')
         assert source.log.count('finalize') == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures('credentials')
+@pytest.mark.parametrize('result', ['saved', 'truncated', 'quality_unknown'])
+async def test_save_original_stream_after_move_refusal(
+    authority: FakeAuthority, source_device: FakeDevice, tmp_path: Path, result: str
+) -> None:
+    """Offer the original stream after a refusal, and publish only a complete file."""
+
+    content = b'Original recording bytes, across packets' * 1000
+    async with (
+        FakeSourceAKE(authority, source_device) as source,
+        FakeMediaServer(source, content, truncation='boundary' if result == 'truncated' else 'none') as media,
+    ):
+        source.reject_initiate = True
+        resource = dtcp_resource(
+            media.url,
+            parameters='DLNA.ORG_CI=0' if result != 'quality_unknown' else 'DLNA.ORG_OP=10',
+            attributes=f'dlna:cleartextSize="{len(content)}"',
+        )
+        folders = {'0': [didl_recording('A1', '0', 'Original', resource)]}
+        async with FakeRecorder(folders, udn=_UDN) as recorder:
+            async with (
+                _launch(recorder, tmp_path, tmp_path / 'device') as (app, _),
+                app.run_test(size=(160, 42)) as pilot,
+            ):
+                await _wait(pilot.pause, lambda: _table(app).row_count == 1)
+                await pilot.press('enter', 'space', 'm')
+                await _wait(pilot.pause, lambda: isinstance(app.screen, ConfirmMoveScreen))
+                app.screen.query_one('#confirm-move', Button).press()
+                await _wait(pilot.pause, lambda: isinstance(app.screen, ChoiceScreen))
+                assert source.log == ['mv_initiate_rejected']
+                assert media.count('GET') == 0
+                if result == 'quality_unknown':
+                    assert not app.screen.query('#choice-stream')
+                    return
+
+                button = app.screen.query_one('#choice-stream', Button)
+                assert str(button.label) == 'Save in original quality'
+                button.press()
+                queue: DataTable[str] = app.query_one('#queue', DataTable)
+                status = 'Saved via stream' if result == 'saved' else 'Failed'
+                await _wait(pilot.pause, lambda: str(queue.get_row_at(0)[0]) == status)
+                if result == 'saved':
+                    (output,) = tmp_path.glob('*.m2ts')
+                    assert output.read_bytes() == content
+                else:
+                    assert not list(tmp_path.glob('*.m2ts'))
+                    assert not list(tmp_path.glob('.*.part'))
+                    await _wait(pilot.pause, lambda: isinstance(app.screen, ChoiceScreen))
+                    assert not app.screen.query('#choice-stream')
+
+        assert media.count('GET') == 1
+        assert all('BLKMove.dtcp.com' not in headers for _, headers in media.requests)
+        assert not {'finalize', 'complete', 'cancel'}.intersection(source.log)
+        assert source.errors == []
 
 
 @pytest.mark.anyio

@@ -1,4 +1,4 @@
-"""Sinks for recording data received through Move or an incoming transfer."""
+"""Sinks for received recording data."""
 
 import asyncio
 import os
@@ -33,7 +33,7 @@ class Sink(Protocol):
 class FileSink:
     """
     A sink that saves recording data to a file.
-    Data is written to `.<filename>.part` beside the destination and moved into place after the Move completes.
+    Data is written to `.<filename>.part` beside the destination and moved into place when committed.
     """
 
     def __init__(self, path: Path) -> None:
@@ -103,7 +103,7 @@ class FileSink:
     async def commit(self) -> None:
         """
         Move `.part` to the destination without overwriting an existing file.
-        Since this is called after the Move completes, report the received data's location on failure.
+        Report the received data's location on failure so it can be recovered.
         """
 
         self._close()
@@ -123,7 +123,7 @@ class FileSink:
             await asyncio.to_thread(move)
         except OSError as ex:
             raise OSError(
-                f'The Move completed, but the received data could not be moved to the destination ({ex}). '
+                f'The received data could not be moved to the destination ({ex}). '
                 f'The received data remains at {self.pending_path}.'
             ) from ex
 
