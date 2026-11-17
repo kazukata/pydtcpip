@@ -75,7 +75,7 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 | Model / report | Discovery | Recording listings | Streaming (non-Move) | Move | Push dubbing reception |
 | --- | --- | --- | --- | --- | --- |
 | [Sony nasne CECH-ZNR1J](https://github.com/tsukumijima/pydtcpip/issues/3) | Reported | Reported | Unverified | Unverified | Not supported |
-| [Buffalo nasne NS-N100](https://github.com/tsukumijima/pydtcpip/issues/4) | Reported (see below) | Reported | Unverified | Unverified | Not supported |
+| [Buffalo nasne NS-N100](https://github.com/tsukumijima/pydtcpip/issues/4) | Reported ([see note](#model-specific-notes)) | Reported | Unverified | Unverified | Not supported |
 | Toshiba REGZA 43Z570L | Verified | Verified | Verified | Refused to start | Verified |
 | [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
 | Toshiba DBR-Z620 | Verified | Verified | Verified | Verified | Verified |
@@ -89,11 +89,22 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 
 If discovery fails on Windows, select your PC's LAN address with `--interface`.
 
-A Buffalo nasne NS-N100 can stay online while it stops answering discovery requests. If it disappears from the list even with the correct `--interface`, pass its device description URL to `info --server`. In the TUI, press `+` and enter the URL. See the [reported case](https://github.com/tsukumijima/pydtcpip/issues/4#issuecomment-6931358437).
+### Model-specific notes
 
-For the REGZA 43Z570L, run `receive` and start dubbing from the TV. In testing, the TV refused to start a Move initiated from the PC.
+- **Sony and Buffalo nasne**
+  - Start transfers from the PC.  
+    The [nasne HOME migration feature](https://www.buffalo.jp/s3/guide/ns-n100/04/ja/recorder/dubbing.html) requires the destination nasne to start the transfer.
+- **Buffalo nasne NS-N100**
+  - If the nasne disappears from discovery even with the correct `--interface`, it may still be reachable by its device description URL.  
+    Pass the URL to `info --server`.  
+    In the TUI, press `+` and enter the URL.  
+    See the [reported case](https://github.com/tsukumijima/pydtcpip/issues/4#issuecomment-6931358437).
+- **REGZA TVs**
+  - For the 43Z570L, run `receive` on the PC and start dubbing from the TV.  
+    In testing, the TV refused to start a Move initiated from the PC.
+  - Other REGZA TV models may also support only dubbing initiated from the TV.
 
-For nasne, use client-initiated transfers rather than `receive`: its documented controls do not provide a way to send recordings to pydtcpip. The [nasne HOME migration feature](https://www.buffalo.jp/s3/guide/ns-n100/04/ja/recorder/dubbing.html) is started from the destination nasne.
+### Family profiles
 
 Details of the implemented specification scope and design principles are summarized in [Implemented specifications and design principles](#implemented-specifications-and-design-principles) later in this document.
 
