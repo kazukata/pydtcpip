@@ -113,6 +113,10 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
   - Other REGZA TV models may also support only dubbing initiated from the TV.
 - **Panasonic DIGA DMR-4TS204S**
   - If `info` lists only converted resources for a recording, use `--resource N` to select one of the listed resources explicitly.
+- **Sony PC TV Plus**
+  - `DLNAClient()` opens a fresh TCP connection for each SOAP request.  
+    A caller-supplied `aiohttp.ClientSession` keeps its own connector settings.  
+    Set `aiohttp.TCPConnector(force_close=True)` on that session for PC TV Plus.
 
 ### Family profiles
 

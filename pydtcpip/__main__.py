@@ -10,7 +10,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
-import aiohttp
 import typer
 from pydantic import ValidationError
 from rich.console import Console
@@ -1252,13 +1251,12 @@ def dump(
     _setup_logging(verbose)
 
     async def main() -> None:
-        async with aiohttp.ClientSession() as http_session:
-            dlna = DLNAClient(http_session=http_session)
+        async with DLNAClient() as dlna:
             media_server = await _select_server(dlna, server)
             files = await dump_media_server(
                 media_server,
                 output_directory,
-                http_session=http_session,
+                http_session=dlna.http_session,
                 max_recordings=max_recordings,
                 should_mask=should_mask,
             )

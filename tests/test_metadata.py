@@ -369,6 +369,21 @@ async def test_pctv_browse_closes_connections_and_reads_copy_counts(model: str) 
 
 
 @pytest.mark.anyio
+async def test_pctv_keeps_the_caller_supplied_connector() -> None:
+    """Use the caller's resolver for both the description and successive SOAP requests."""
+
+    source = MetadataSource('Sony Corporation', 'PC TV Plus', recording_xml('<av:COGCount>1</av:COGCount>'))
+    async with source.serve() as (_, port):
+        connector = aiohttp.TCPConnector(resolver=LocalResolver(port))
+        async with aiohttp.ClientSession(connector=connector) as session:
+            async with DLNAClient(http_session=session) as client:
+                server = await client.get_server(f'http://pc-tv-plus.invalid:{port}/description.xml')
+                for _ in range(2):
+                    assert len((await server.browse()).objects) == 1
+            assert session.closed is False
+
+
+@pytest.mark.anyio
 async def test_pctv_dump_uses_fresh_connections_even_when_the_server_ignores_connection_close(tmp_path: Path) -> None:
     """Complete the standard dump when the server keeps the socket open but refuses a second Browse on it."""
 

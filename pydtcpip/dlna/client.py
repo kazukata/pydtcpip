@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 from collections.abc import AsyncIterator, Callable
+from contextlib import AsyncExitStack
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from types import TracebackType
@@ -51,7 +52,14 @@ class MediaServer:
     A profile selected from its device description interprets family-specific behavior.
     """
 
-    def __init__(self, description: DeviceDescription, *, http_session: aiohttp.ClientSession, timeout: float) -> None:
+    def __init__(
+        self,
+        description: DeviceDescription,
+        *,
+        http_session: aiohttp.ClientSession,
+        timeout: float,
+        manages_soap_connections: bool = False,
+    ) -> None:
         """
         Configure the device description and HTTP session.
 
@@ -59,12 +67,14 @@ class MediaServer:
             description (DeviceDescription): Media server device description
             http_session (aiohttp.ClientSession): HTTP session shared with DLNAClient
             timeout (float): Response timeout in seconds
+            manages_soap_connections (bool): Apply the profile's connection policy to a library-owned session
         """
 
         self.description = description
         self.profile: Profile = select_profile(description)
         self._http_session = http_session
         self._timeout = timeout
+        self._manages_soap_connections = manages_soap_connections
         self.extension: MetadataExtension = create_extension(self)
         self._service_descriptions: dict[str, ServiceDescription] = {}
         self._metadata_responses: ContextVar[list[MetadataResponse] | None] = ContextVar(
@@ -324,17 +334,27 @@ class MediaServer:
 
         responses = self._metadata_responses.get()
         try:
-            return await call_action(
-                self._http_session,
-                service.control_url,
-                service.service_type,
-                action,
-                arguments,
-                timeout=self._timeout,
-                reuse_connection=self.profile.allows_soap_connection_reuse(),
-                extra_headers=extra_headers,
-                on_response=responses.append if responses is not None else None,
-            )
+            async with AsyncExitStack() as stack:
+                session = self._http_session
+                if self.profile.allows_soap_connection_reuse() is False:
+                    extra_headers = {'Connection': 'close'} | (extra_headers or {})
+                    # A borrowed session controls its own connector, including any custom routing or middleware
+                    if self._manages_soap_connections and session.closed is False:
+                        session = await stack.enter_async_context(
+                            aiohttp.ClientSession(
+                                connector=aiohttp.TCPConnector(force_close=True), cookie_jar=session.cookie_jar
+                            )
+                        )
+                return await call_action(
+                    session,
+                    service.control_url,
+                    service.service_type,
+                    action,
+                    arguments,
+                    timeout=self._timeout,
+                    extra_headers=extra_headers,
+                    on_response=responses.append if responses is not None else None,
+                )
         except DLNAError as ex:
             raise self.interpret_http_error(ex, service.control_url) from ex
 
@@ -429,6 +449,7 @@ class DLNAClient:
     def __init__(self, *, timeout: float = 10.0, http_session: aiohttp.ClientSession | None = None) -> None:
         """
         Configure communication.
+        A caller-supplied session retains its connector settings. Use a force-closing connector with PC TV Plus.
 
         Args:
             timeout (float): Device response timeout in seconds
@@ -456,6 +477,19 @@ class DLNAClient:
         if self._owns_http_session is True and self._http_session is not None:
             await self._http_session.close()
             self._http_session = None
+
+    @property
+    def http_session(self) -> aiohttp.ClientSession:
+        """
+        Return the shared session for HTTP requests to discovered devices.
+
+        Returns:
+            aiohttp.ClientSession: Session belonging to this client or supplied by the caller
+        """
+
+        if self._http_session is None:
+            self._http_session = aiohttp.ClientSession()
+        return self._http_session
 
     async def discover(
         self,
@@ -587,10 +621,9 @@ class DLNAClient:
             MediaServer: Media server
         """
 
-        if self._http_session is None:
-            self._http_session = aiohttp.ClientSession()
+        session = self.http_session
         try:
-            async with self._http_session.get(location, timeout=aiohttp.ClientTimeout(total=self._timeout)) as response:
+            async with session.get(location, timeout=aiohttp.ClientTimeout(total=self._timeout)) as response:
                 if response.status >= 400:
                     raise DLNAError(
                         f'Could not fetch device description (HTTP {response.status}): {location}',
@@ -600,5 +633,8 @@ class DLNAClient:
         except (aiohttp.ClientError, TimeoutError) as ex:
             raise DLNAError(f'Could not fetch device description ({ex}): {location}') from ex
         return MediaServer(
-            parse_device_description(location, raw_xml), http_session=self._http_session, timeout=self._timeout
+            parse_device_description(location, raw_xml),
+            http_session=session,
+            timeout=self._timeout,
+            manages_soap_connections=self._owns_http_session,
         )
