@@ -320,7 +320,8 @@ async def test_rejected_resume_keeps_received_data(
         FakeMediaServer(source, _CONTENT) as server,
         DTCPClient(sink_device.credentials(), timeout=5) as client,
     ):
-        source.drop_finalize_responses = 1
+        # Lose every finalize response so the in-band retries are exhausted and the Move is left resumable
+        source.drop_finalize_responses = 3
         with pytest.raises(DTCPError):
             await client.move(server.url, FileSink(path), on_resume_state=resume_states.append)
         resume_state = resume_states[-1]
@@ -410,7 +411,7 @@ async def test_move_completes_when_source_rejects_complete(
 async def test_recording_is_committed_before_complete_response(
     authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice, tmp_path: Path
 ) -> None:
-    """Commit after verified finalization and retry only completion if its response is lost."""
+    """Commit after verified finalization and retry only completion if its responses are lost."""
 
     path = tmp_path / 'recording.ts'
     resume_states: list[MoveResumeState | None] = []
@@ -419,7 +420,8 @@ async def test_recording_is_committed_before_complete_response(
         FakeMediaServer(source, _CONTENT) as server,
         DTCPClient(sink_device.credentials(), timeout=5) as client,
     ):
-        source.drop_complete_responses = 1
+        # Lose every complete response so the in-band retries are exhausted
+        source.drop_complete_responses = 3
         with pytest.raises(DTCPError):
             await client.move(server.url, FileSink(path), on_resume_state=resume_states.append)
         assert path.read_bytes() == _CONTENT
@@ -430,7 +432,37 @@ async def test_recording_is_committed_before_complete_response(
         assert await client.resume_move(resume_state, None, on_resume_state=resume_states.append) == len(_CONTENT)
 
     assert source.log[-1] == 'complete'
-    assert source.log.count('complete') == 2
+    assert source.log.count('complete') == 4
+    assert resume_states[-1] is None
+
+
+@pytest.mark.anyio
+async def test_move_retries_finalize_after_response_is_lost(
+    authority: FakeAuthority,
+    sink_device: FakeDevice,
+    source_device: FakeDevice,
+    tmp_path: Path,
+) -> None:
+    """Retry finalization on a fresh connection with the same nonce when its response is lost."""
+
+    path = tmp_path / 'recording.ts'
+    pending_path = tmp_path / '.recording.ts.part'
+    resume_states: list[MoveResumeState | None] = []
+    async with (
+        FakeSourceAKE(authority, source_device) as source,
+        FakeMediaServer(source, _CONTENT) as server,
+        DTCPClient(sink_device.credentials(), timeout=5) as client,
+    ):
+        source.drop_finalize_responses = 1
+        size = await client.move(server.url, FileSink(path), on_resume_state=resume_states.append)
+
+    assert size == len(_CONTENT)
+    assert path.read_bytes() == _CONTENT
+    assert pending_path.exists() is False
+    assert 'cancel' not in source.log
+    assert len(source.finalize_nonces) == 2
+    assert source.finalize_nonces[0] == source.finalize_nonces[1]
+    assert source.log[-2:] == ['finalize', 'complete']
     assert resume_states[-1] is None
 
 
@@ -441,7 +473,7 @@ async def test_move_resumes_after_finalize_response_is_lost(
     source_device: FakeDevice,
     tmp_path: Path,
 ) -> None:
-    """Retain data and resume state after a lost finalize response because the source may have consumed a copy."""
+    """Retain data and resume state after every finalize response is lost because the source may have consumed a copy."""
 
     path = tmp_path / 'recording.ts'
     pending_path = tmp_path / '.recording.ts.part'
@@ -452,7 +484,8 @@ async def test_move_resumes_after_finalize_response_is_lost(
         FakeMediaServer(source, _CONTENT) as server,
         DTCPClient(sink_device.credentials(), timeout=5) as client,
     ):
-        source.drop_finalize_responses = 1
+        # Lose every finalize response so the in-band retries are exhausted and the Move is left resumable
+        source.drop_finalize_responses = 3
         with pytest.raises(DTCPError):
             await client.move(server.url, FileSink(path), on_resume_state=resume_states.append, on_event=events.append)
 
@@ -478,7 +511,7 @@ async def test_move_resumes_after_finalize_response_is_lost(
     assert 'mv_initiate' not in source.log[log_count:]
     assert 'mv_exchange_key' not in source.log[log_count:]
     assert source.log[log_count] == 'challenge'
-    assert len(source.finalize_nonces) == 2
-    assert source.finalize_nonces[0] == source.finalize_nonces[1]
+    assert len(source.finalize_nonces) == 4
+    assert len(set(source.finalize_nonces)) == 1
     assert source.log[-2:] == ['finalize', 'complete']
     assert resume_states[-1] is None

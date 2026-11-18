@@ -199,7 +199,7 @@ class MoveTransaction:
         self.state = 'finalizing'
         await dispatch_event(self._on_event, MoveFinalizeRequested(transfer_id=self.transfer_id))
         try:
-            response = await self._exchange(MV_FINALIZE, prefix + digest[:10])
+            response = await self._exchange_with_reconnect(MV_FINALIZE, prefix + digest[:10])
         except _MoveCommandRejectedError as ex:
             # Do not retry a rejected finalize request (V1SE 10.4.3)
             ## If the first request is rejected, the source has not made the recording unavailable
@@ -229,7 +229,7 @@ class MoveTransaction:
         if self.state != 'finalized':
             raise DTCPError('Receive the Move finalize response before notifying completion.')
         try:
-            await self._exchange(MV_COMPLETE, bytes((self.exchange_key.label,)))
+            await self._exchange_with_reconnect(MV_COMPLETE, bytes((self.exchange_key.label,)))
         except _MoveCommandRejectedError:
             # Sources should accept completion after deleting resume state (V1SE 10.4.3.1), but some reject it
             ## DBR-Z620 rejects completion after deleting resume state
@@ -268,10 +268,44 @@ class MoveTransaction:
                 # Treat the close as complete even if the peer disconnected first
                 pass
 
+    async def _exchange_with_reconnect(self, command: int, payload: bytes, *, role: int = 0) -> bytes:
+        """
+        Exchange a finalization or completion request, reconnecting when the response is lost.
+        These requests are idempotent for the same nonce, so a request whose response never
+        arrived can be sent again on a fresh connection instead of abandoning the Move.
+        A rejection is a definitive answer from the source and is never retried.
+
+        Args:
+            command (int): Move control command
+            payload (bytes): Exchange key label and command-specific payload
+            role (int): Role value for the command
+
+        Returns:
+            bytes: Accepted response payload
+        """
+
+        # Wait briefly between attempts to let the source finish closing the previous connection
+        delays = (1.0, 4.0)
+        attempt = 0
+        while True:
+            try:
+                return await self._exchange(command, payload, role=role)
+            except _MoveCommandRejectedError:
+                raise
+            except (OSError, TimeoutError, DTCPError):
+                if self._connect is None or attempt >= len(delays):
+                    raise
+                _LOGGER.info(
+                    f'No response to the Move control request (command: 0x{command:02x}); '
+                    'reconnecting to send it again.'
+                )
+                await asyncio.sleep(delays[attempt])
+                attempt += 1
+
     async def _exchange(self, command: int, payload: bytes, *, role: int = 0) -> bytes:
         """
         Send a control request and return the accepted response payload.
-        Reconnect if needed, using connect for normal authentication when supplied.
+        Reconnect if needed, using connect when supplied.
         Build requests with the saved Move exchange key and nonce rather than obtaining a new Move key.
 
         Args:
@@ -285,6 +319,11 @@ class MoveTransaction:
 
         try:
             async with asyncio.timeout(self._timeout):
+                if self._connection is not None and self._connection[0].at_eof() is True:
+                    # The source already closed this connection (some sources close the
+                    # authentication connection right after authentication completes), so
+                    # sending the request on it would lose the request; reconnect first
+                    await self.close()
                 if self._connection is None:
                     if self._connect is not None:
                         self._connection = await self._connect()

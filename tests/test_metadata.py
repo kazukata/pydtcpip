@@ -943,10 +943,11 @@ async def test_cli_resume_continues_without_readable_metadata(
         FakeSourceAKE(authority, source_device) as source,
         FakeMediaServer(source, content) as media,
     ):
+        # Lose every response so the in-band retries are exhausted and the CLI leaves a resume state
         if lost_response == 'finalize':
-            source.drop_finalize_responses = 1
+            source.drop_finalize_responses = 3
         else:
-            source.drop_complete_responses = 1
+            source.drop_complete_responses = 3
         args = ['--data-dir', str(tmp_path / 'device')]
         result = await asyncio.to_thread(
             CliRunner().invoke, app, [*args, 'move', str(output), '--url', media.url, '--yes']
