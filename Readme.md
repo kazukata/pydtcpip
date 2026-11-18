@@ -85,7 +85,7 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 | [Panasonic VIERA TH-65LX950](https://github.com/tsukumijima/pydtcpip/issues/14) | Reported | Reported | [Reported](https://github.com/tsukumijima/pydtcpip/issues/14#issuecomment-6946179349) | Connection closed at start | Unverified |
 | [Panasonic DMR-BXT3000](https://github.com/tsukumijima/pydtcpip/issues/7) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
-| [Panasonic DMR-BRW1060 / BCW1060](https://github.com/tsukumijima/pydtcpip/issues/20) | Reported | Blocked until the PC is authorized ([see note](#model-specific-notes)) | Unverified | Unverified | Unverified |
+| [Panasonic DMR-BRW1060 / BCW1060](https://github.com/tsukumijima/pydtcpip/issues/20) | Reported | Protected folders need DTCP-IP authentication ([see note](#model-specific-notes)) | Unverified | Unverified | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
 | [Panasonic DIGA DMR-4TS204S](https://github.com/tsukumijima/pydtcpip/issues/15) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Sony BDZ-ZW1500](https://github.com/tsukumijima/pydtcpip/issues/2) | Reported | Reported | Reported (10 seconds) | Unverified | Unverified |
@@ -115,8 +115,8 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
     In testing, the TV refused to start a Move initiated from the PC.
   - Other REGZA TV models may also support only dubbing initiated from the TV.
 - **Panasonic DMR-BRW1060 / BCW1060**
-  - The recorder lists the folder structure, photos, music and tuner channels, but refuses to list its video recordings until the PC is authorized, reporting a client authorization error instead.  
-    On the recorder, turn on home streaming (お部屋ジャンプリンク) and set the home-network access permission to allow this PC, then try again; `dump` continues past the blocked folders and records the refusal.
+  - The folder structure, photos, music and tuner channels list without credentials, but the recorded-programme folders (`AV_ALL` and similar) return a client authorization error (UPnP 720).  
+    Enabling home streaming (お部屋ジャンプリンク) and permitting this PC in the recorder's connected-device list did not clear it; the recorder lists its protected recordings only to a DTCP-IP-authenticated client, so configure DTCP-IP credentials to browse them. `dump` continues past the blocked folders and records the refusal.
 - **Panasonic DIGA DMR-4TS204S**
   - If `info` lists only converted resources for a recording, choose a resource number from that list.  
     Pass it to `stream` or `move` as `--resource N` for the same recording.

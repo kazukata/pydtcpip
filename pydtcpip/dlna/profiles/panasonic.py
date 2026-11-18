@@ -108,9 +108,9 @@ def _interpret_http_status(status: int, url: str, upnp_error_code: int | None) -
     # recording folders until the PC is authorized, while BrowseMetadata on the same folder still succeeds
     if upnp_error_code == _CANNOT_PROCESS_REQUEST:
         return ClientNotAllowedError(
-            'The recorder has not authorized this PC to list its recordings. '
-            'On the recorder, enable home streaming and allow this PC under the home-network '
-            '(DLNA) access settings, then try again.',
+            'The recorder refused to list its protected recordings. '
+            'Enable home streaming and allow this PC in the recorder home-network settings; '
+            'some recorders list protected recordings only to a client authenticated with DTCP-IP credentials.',
             http_status=status,
             upnp_error_code=upnp_error_code,
         )
