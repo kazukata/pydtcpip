@@ -82,7 +82,7 @@ Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panas
 | Toshiba REGZA 43Z570L | Verified | Verified | Verified | Refused to start | Verified |
 | [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
 | Toshiba DBR-Z620 | Verified | Verified | Verified | Verified | Verified |
-| [Panasonic VIERA TH-65LX950](https://github.com/tsukumijima/pydtcpip/issues/14) | Reported | Reported | [Reported](https://github.com/tsukumijima/pydtcpip/issues/14#issuecomment-6946179349) | Connection closed at start | Unverified |
+| [Panasonic VIERA TH-65LX950](https://github.com/tsukumijima/pydtcpip/issues/14) | Reported | Reported | [Reported](https://github.com/tsukumijima/pydtcpip/issues/14#issuecomment-6946179349) | Connection closed at start | Reported |
 | [Panasonic DMR-BXT3000](https://github.com/tsukumijima/pydtcpip/issues/7) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |

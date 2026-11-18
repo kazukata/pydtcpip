@@ -32,6 +32,63 @@ _CONTENT = os.urandom(4000 * 3 + 1234)
 
 
 @pytest.mark.anyio
+async def test_create_object_preserves_sender_namespaces(sink_device: FakeDevice) -> None:
+    """Preserve default and vendor namespaces while assigning the destination and retaining source XML."""
+
+    source_xml = (
+        '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
+        'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+        'xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" '
+        'xmlns:dtcp="urn:schemas-dtcp-com:metadata-1-0/" '
+        'xmlns:pxn="urn:schemas-panasonic-com:pxn/">'
+        '<item id="source" parentID="source-parent" restricted="0">'
+        '<dc:title>Example &amp; test</dc:title><upnp:class>object.item.videoItem</upnp:class>'
+        '<pxn:extra pxn:flag="1">example<res>Extension data</res></pxn:extra>'
+        '<res protocolInfo="*:*:application/x-dtcp1:DLNA.ORG_PN=DTCP_MPEG_TS_JP_T" '
+        'dtcp:uploadInfo="C0000000"></res></item></DIDL-Lite>'
+    )
+
+    class ObservedReceiver(DubbingReceiver):
+        """Expose registration while verifying retained source metadata."""
+
+        async def register(self) -> dict[str, str]:
+            """Register the test recording.
+
+            Returns:
+                dict[str, str]: Object ID and response XML
+            """
+
+            result = await self._create_object({'ContainerID': '0', 'Elements': source_xml}, 'http://192.0.2.1:57000')
+            assert self._items[result['ObjectID']].recording.source_xml == source_xml
+            return result
+
+    receiver = ObservedReceiver(sink_device.credentials(), lambda recording: MemorySink())
+    result = await receiver.register()
+    response_xml = result['Result']
+    assert response_xml.startswith('<DIDL-Lite xmlns=')
+    assert '<upnp:class>' in response_xml
+    assert 'dtcp:uploadInfo="C0000000"' in response_xml
+    response_document = minidom.parseString(response_xml)
+    assert response_document.getElementsByTagName('res')[-1].toxml().endswith('/>')
+    response_document.unlink()
+    root = ET.fromstring(response_xml)
+    item = root.find('{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}item')
+    assert item is not None
+    assert item.get('id') == result['ObjectID']
+    assert item.get('parentID') == '0'
+    assert item.findtext('{http://purl.org/dc/elements/1.1/}title') == 'Example & test'
+    extra = item.find('{urn:schemas-panasonic-com:pxn/}extra')
+    assert extra is not None and extra.get('{urn:schemas-panasonic-com:pxn/}flag') == '1'
+    nested_resource = extra.find('{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}res')
+    assert nested_resource is not None
+    assert nested_resource.text == 'Extension data'
+    assert nested_resource.get('importUri') is None
+    resource = item.find('{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}res')
+    assert resource is not None
+    assert resource.get('importUri') == f'http://192.0.2.1:57000/upload/{result["ObjectID"]}'
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize('is_interrupted', [False, True])
 async def test_cli_receiver_preserves_retries_and_finalization(
     authority: FakeAuthority,

@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from urllib.parse import urlsplit
+from xml.dom import minidom
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 
@@ -544,7 +545,29 @@ class DubbingReceiver:
         recordings[0] = recordings[0].model_copy(update={'source_xml': arguments['Elements']})
         self._items[item_id] = _UploadItem(item_id, item, recordings[0])
         self._update_id += 1
-        return {'ObjectID': item_id, 'Result': ET.tostring(root, encoding='unicode')}
+        # Preserve the sender's namespace prefixes without changing ElementTree's global namespace registry
+        document = minidom.parseString(arguments['Elements'])
+        response_root = document.documentElement
+        assert response_root is not None
+        # Match the direct children validated above, not same-named descendants inside vendor extensions
+        response_item = next(
+            child
+            for child in response_root.childNodes
+            if isinstance(child, minidom.Element) and child.namespaceURI == DIDL_NAMESPACE and child.localName == 'item'
+        )
+        response_item.setAttribute('id', item_id)
+        response_item.setAttribute('parentID', '0')
+        response_resource = next(
+            child
+            for child in response_item.childNodes
+            if isinstance(child, minidom.Element) and child.namespaceURI == DIDL_NAMESPACE and child.localName == 'res'
+        )
+        response_resource.setAttribute('importUri', f'{base_url}/upload/{item_id}')
+        while response_resource.firstChild is not None:
+            response_resource.removeChild(response_resource.firstChild)
+        result_xml = response_root.toxml()
+        document.unlink()
+        return {'ObjectID': item_id, 'Result': result_xml}
 
     async def _handle_upload_expect(self, request: web.Request) -> web.StreamResponse | None:
         """
