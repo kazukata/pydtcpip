@@ -330,8 +330,16 @@ async def _select_recording(server: MediaServer, object_id: str | None) -> Recor
     # Enter selected folders until a recording is selected
     container_id = '0'
     while True:
-        with console.status('Fetching listing...'):
-            objects = await server.browse_all(container_id)
+        try:
+            with console.status('Fetching listing...'):
+                objects = await server.browse_all(container_id)
+        except DLNAError as ex:
+            # A recorder may refuse to list a protected folder until the PC is authorized
+            console.print(f'[yellow]Could not list this folder: {ex}[/yellow]')
+            if container_id == '0':
+                raise typer.Exit(1) from ex
+            container_id = '0'
+            continue
         if len(objects) == 0:
             console.print('[yellow]This folder is empty.[/yellow]')
             container_id = '0'

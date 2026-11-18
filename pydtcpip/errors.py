@@ -9,7 +9,12 @@ class DLNAError(PyDTCPIPError):
     """Device discovery or processing a device description, SOAP or HTTP response failed."""
 
     def __init__(
-        self, message: str, *, http_status: int | None = None, diagnostic_headers: dict[str, str] | None = None
+        self,
+        message: str,
+        *,
+        http_status: int | None = None,
+        upnp_error_code: int | None = None,
+        diagnostic_headers: dict[str, str] | None = None,
     ) -> None:
         """
         Initialize the exception.
@@ -17,6 +22,7 @@ class DLNAError(PyDTCPIPError):
         Args:
             message (str): Description to show the user
             http_status (int | None): HTTP status returned by the recorder, if the error came from an HTTP response
+            upnp_error_code (int | None): UPnP error code from a SOAP fault, if the response was a UPnP action fault
             diagnostic_headers (dict[str, str] | None): Recorder diagnostic fields from the HTTP response
         """
 
@@ -25,6 +31,7 @@ class DLNAError(PyDTCPIPError):
             message += ' ' + '; '.join(f'{name}: {value}' for name, value in self.diagnostic_headers.items())
         super().__init__(message)
         self.http_status = http_status
+        self.upnp_error_code = upnp_error_code
 
 
 class UnsupportedActionError(DLNAError):

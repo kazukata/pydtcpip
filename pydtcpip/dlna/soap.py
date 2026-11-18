@@ -111,6 +111,7 @@ async def call_action(
         raise DLNAError(
             f'{action} failed (HTTP {status}, UPnP error code: {error_code}, description: {error_description}).',
             http_status=status,
+            upnp_error_code=int(error_code) if error_code is not None and error_code.strip().isdecimal() else None,
         )
 
     # Collect the response action element's children as output arguments

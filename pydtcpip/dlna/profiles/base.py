@@ -57,7 +57,7 @@ class Profile:
     # Read remaining copies from a recording's DIDL-Lite item
     read_remaining_copy_count: Callable[[ET.Element], ProtectionValue[int]] | None = None
     # Interpret an HTTP status as a family-specific exception (or return None)
-    interpret_http_status: Callable[[int, str], PyDTCPIPError | None] | None = None
+    interpret_http_status: Callable[[int, str, int | None], PyDTCPIPError | None] | None = None
     # Whether BrowseDirectChildren includes fields absent from BrowseMetadata
     has_listing_only_metadata: bool | None = None
     # New families remain unverified until their behavior has been tested with a device
@@ -336,12 +336,12 @@ class Profile:
             profile = profile.parent
         raise LookupError('The generic root profile has no read_remaining_copy_count function.')
 
-    def resolve_http_status(self) -> Callable[[int, str], PyDTCPIPError | None]:
+    def resolve_http_status(self) -> Callable[[int, str, int | None], PyDTCPIPError | None]:
         """
         Resolve the HTTP status interpreter through the parent chain.
 
         Returns:
-            Callable[[int, str], PyDTCPIPError | None]: Function defined by the nearest ancestor
+            Callable[[int, str, int | None], PyDTCPIPError | None]: Function defined by the nearest ancestor
         """
 
         profile: Profile | None = self

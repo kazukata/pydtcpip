@@ -22,13 +22,14 @@ def _read_remaining_copy_count(item: ET.Element) -> ProtectionValue[int]:
     return ProtectionValue[int](status='unsupported', source='metadata')
 
 
-def _interpret_http_status(status: int, url: str) -> PyDTCPIPError | None:
+def _interpret_http_status(status: int, url: str, upnp_error_code: int | None) -> PyDTCPIPError | None:
     """
     Leave HTTP errors without a device-specific interpretation.
 
     Args:
         status (int): HTTP status code
         url (str): URL of the failed request
+        upnp_error_code (int | None): UPnP error code from a SOAP fault, if present
 
     Returns:
         PyDTCPIPError | None: Always None for the generic profile

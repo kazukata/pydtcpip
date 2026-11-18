@@ -72,13 +72,14 @@ def _read_resource_variant(resource: Resource) -> ResourceVariant | None:
     )
 
 
-def _interpret_http_status(status: int, url: str) -> PyDTCPIPError | None:
+def _interpret_http_status(status: int, url: str, upnp_error_code: int | None) -> PyDTCPIPError | None:
     """
     Interpret nasne's client authorization refusal.
 
     Args:
         status (int): HTTP status code
         url (str): URL of the failed request
+        upnp_error_code (int | None): UPnP error code from a SOAP fault, if present
 
     Returns:
         PyDTCPIPError | None: Client authorization error for 403, otherwise None
