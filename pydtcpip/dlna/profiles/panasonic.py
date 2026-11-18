@@ -6,7 +6,13 @@ from xml.etree import ElementTree as ET
 from pydtcpip.dlna.description import DeviceDescription
 from pydtcpip.dlna.profiles.base import ChapterField, CopyCountField, Profile
 from pydtcpip.dlna.profiles.generic import GENERIC
+from pydtcpip.errors import ClientNotAllowedError, PyDTCPIPError
 from pydtcpip.models import Recording, Resource, ResourceConversion
+
+
+# UPnP error returned when the recorder refuses to list a protected container's children
+## Returned on BrowseDirectChildren of recording folders while BrowseMetadata on the same folder succeeds
+_CANNOT_PROCESS_REQUEST = 720
 
 
 def _matches(description: DeviceDescription) -> bool:
@@ -85,11 +91,38 @@ def _needs_listing_metadata(recording: Recording) -> bool:
     )
 
 
+def _interpret_http_status(status: int, url: str, upnp_error_code: int | None) -> PyDTCPIPError | None:
+    """
+    Interpret a recorder that withholds protected recordings from unauthorized clients.
+
+    Args:
+        status (int): HTTP status code
+        url (str): URL of the failed request
+        upnp_error_code (int | None): UPnP error code from a SOAP fault, if present
+
+    Returns:
+        PyDTCPIPError | None: Client authorization error when the recorder refuses the listing, otherwise None
+    """
+
+    # Some recorders list structure, photos, music and tuner channels but return 720 for protected
+    # recording folders until the PC is authorized, while BrowseMetadata on the same folder still succeeds
+    if upnp_error_code == _CANNOT_PROCESS_REQUEST:
+        return ClientNotAllowedError(
+            'The recorder has not authorized this PC to list its recordings. '
+            'On the recorder, enable home streaming and allow this PC under the home-network '
+            '(DLNA) access settings, then try again.',
+            http_status=status,
+            upnp_error_code=upnp_error_code,
+        )
+    return None
+
+
 PANASONIC = Profile(
     name='panasonic',
     parent=GENERIC,
     matches=_matches,
     is_unverified=True,
+    interpret_http_status=_interpret_http_status,
     # Some models omit CopyCount from BrowseMetadata but include it in parent listings
     has_listing_only_metadata=True,
     needs_listing_metadata=_needs_listing_metadata,

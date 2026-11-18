@@ -12,6 +12,7 @@ import aiohttp
 from pydantic import BaseModel, ConfigDict
 
 from pydtcpip.dlna.client import MediaServer
+from pydtcpip.errors import DLNAError
 from pydtcpip.models import Container, Recording
 
 
@@ -505,8 +506,14 @@ async def dump_media_server(
     browse_index = 0
     while len(pending_containers) > 0 and len(recordings) < max_recordings and browse_index < 20:
         container_id = pending_containers.pop(0)
-        result = await server.browse(container_id, start=0, count=max_recordings)
         browse_index += 1
+        # Some recorders refuse to list protected folders until the PC is authorized; record the
+        # error and keep dumping the remaining folders instead of aborting the whole diagnostic
+        try:
+            result = await server.browse(container_id, start=0, count=max_recordings)
+        except DLNAError as ex:
+            write(f'browse-{browse_index:02d}.txt', f'Browse failed: {ex}\n', f'Folder {browse_index} listing failed')
+            continue
         write_xml(f'browse-{browse_index:02d}.xml', result.raw_didl, 'didl', f'Folder {browse_index} listing')
         for position, item in enumerate(result.objects):
             if isinstance(item, Container):

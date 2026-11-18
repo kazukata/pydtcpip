@@ -9,6 +9,7 @@ from pydtcpip.dlna.description import parse_device_description
 from pydtcpip.dlna.didl import parse_didl
 from pydtcpip.dlna.profiles import GENERIC, PROFILES, select_profile
 from pydtcpip.dlna.profiles.nasne import NASNE
+from pydtcpip.dlna.profiles.panasonic import PANASONIC
 from pydtcpip.errors import ClientNotAllowedError
 from pydtcpip.models import Recording
 
@@ -174,7 +175,7 @@ def test_generic_profile_handles_standard_dlna_without_vendor_meaning() -> None:
     assert recording.protection.remaining_copy_count.status == 'unsupported'
     assert recording.protection.is_move_supported.value is True
     assert recording.protection.is_transaction_move_supported.value is True
-    assert profile.resolve_http_status()(403, 'http://192.0.2.1/2') is None
+    assert profile.resolve_http_status()(403, 'http://192.0.2.1/2', None) is None
 
 
 @pytest.mark.parametrize(
@@ -218,10 +219,20 @@ def test_nasne_model_names_select_a_unique_profile(manufacturer: str, model_name
 
 def test_nasne_reports_client_registration_refusal() -> None:
     # Distinguish nasne's 403 from authentication failures so users can find client registration
-    error = NASNE.resolve_http_status()(403, 'http://192.0.2.1/2')
+    error = NASNE.resolve_http_status()(403, 'http://192.0.2.1/2', None)
     assert isinstance(error, ClientNotAllowedError)
     assert 'Client Device Management' in str(error)
-    assert NASNE.resolve_http_status()(404, 'http://192.0.2.1/2') is None
+    assert NASNE.resolve_http_status()(404, 'http://192.0.2.1/2', None) is None
+
+
+def test_panasonic_reports_client_authorization_refusal() -> None:
+    # Some recorders return UPnP 720 on a protected folder's children until the PC is authorized
+    error = PANASONIC.resolve_http_status()(500, 'http://192.0.2.1/cds', 720)
+    assert isinstance(error, ClientNotAllowedError)
+    assert error.upnp_error_code == 720
+    # Other UPnP faults under the same HTTP status keep their generic meaning
+    assert PANASONIC.resolve_http_status()(500, 'http://192.0.2.1/cds', 709) is None
+    assert PANASONIC.resolve_http_status()(500, 'http://192.0.2.1/cds', None) is None
 
 
 def test_recording_keeps_all_long_descriptions_in_document_order() -> None:

@@ -397,10 +397,13 @@ class MediaServer:
 
         if error.http_status is None:
             return error
-        interpreted = self.profile.resolve_http_status()(error.http_status, url)
+        interpreted = self.profile.resolve_http_status()(error.http_status, url, error.upnp_error_code)
         if isinstance(interpreted, DLNAError):
             return type(interpreted)(
-                str(interpreted), http_status=error.http_status, diagnostic_headers=error.diagnostic_headers
+                str(interpreted),
+                http_status=error.http_status,
+                upnp_error_code=error.upnp_error_code,
+                diagnostic_headers=error.diagnostic_headers,
             )
         return error
 

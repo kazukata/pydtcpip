@@ -23,7 +23,7 @@ from pydtcpip.dlna.didl import parse_didl
 from pydtcpip.dlna.extensions.sony import SonyMetadataResult
 from pydtcpip.dlna.extensions.xml_chapters import ChapterFormat, parse_chapters
 from pydtcpip.dlna.profiles import PROFILES
-from pydtcpip.errors import DLNAError
+from pydtcpip.errors import ClientNotAllowedError, DLNAError
 from pydtcpip.events import AuthenticationCompleted, MoveCompleted
 from pydtcpip.metadata import MetadataSidecar
 from pydtcpip.models import MoveResumeState
@@ -366,6 +366,38 @@ async def test_pctv_browse_closes_connections_and_reads_copy_counts(model: str) 
         )
     assert len(transports) == 3
     assert len(set(transports)) == (3 if model == 'PC TV Plus' else 1)
+
+
+@pytest.mark.anyio
+async def test_panasonic_browse_refusal_becomes_a_client_authorization_error() -> None:
+    """Report a recorder's protected-folder refusal as a client authorization error, not a raw fault."""
+
+    class RefusingSource(MetadataSource):
+        async def handle(self, request: web.Request) -> web.Response:
+            if request.method == 'POST':
+                body = ET.fromstring(await request.read())
+                action = body.find('{http://schemas.xmlsoap.org/soap/envelope/}Body')
+                assert action is not None
+                if action[0].tag.rpartition('}')[2] == 'Browse':
+                    return web.Response(
+                        status=500,
+                        content_type='text/xml',
+                        text='<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
+                        '<s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail>'
+                        '<UPnPError xmlns="urn:schemas-upnp-org:control-1-0"><errorCode>720</errorCode>'
+                        '<errorDescription>Cannot process the request</errorDescription></UPnPError>'
+                        '</detail></s:Fault></s:Body></s:Envelope>',
+                    )
+            return await super().handle(request)
+
+    source = RefusingSource('Panasonic', 'BD/DVD Recorder', recording_xml(''))
+    async with source.serve() as (location, _), DLNAClient() as client:
+        server = await client.get_server(location)
+        assert server.profile.name == 'panasonic'
+        with pytest.raises(ClientNotAllowedError) as caught:
+            await server.browse('AV_ALL')
+    assert caught.value.upnp_error_code == 720
+    assert caught.value.http_status == 500
 
 
 @pytest.mark.anyio
