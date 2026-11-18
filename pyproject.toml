@@ -46,6 +46,10 @@ dev = [
     "taskipy>=1.14.1",
 ]
 
+[project.urls]
+Homepage = "https://github.com/tsukumijima/pydtcpip"
+Source = "https://github.com/tsukumijima/pydtcpip"
+
 [project.scripts]
 pydtcpip = "pydtcpip.__main__:app"
 
