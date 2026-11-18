@@ -59,7 +59,7 @@ pydtcpip is a foundation library for recovering broadcast recordings from aging 
 - **Interactive interface combining discovery, program information and Move transfers**: The functions of `discover`, `info`, `move` and `resume` on one screen, showing recorders, folders, program information, qualities, sizes and copy counts side by side and moving several selected recordings in sequence (`tui`)
 - **Streaming reception without consuming the copy count**: Data delivery with backpressure control through asynchronous callbacks, and transfer to FFplay or similar tools through standard output (`stream`)
 - **Listening for incoming dubbing transfers as a DTCP-IP-compatible NAS**: Reception of recordings and program information from TVs and recorders that have no streaming functionality and only support push dubbing started from the device's own menu (送り出しダビング) (`receive`)
-- **Diagnostic data export**: Export of protocol responses from unsupported models with identifying information and program titles masked for issue reports (`dump --mask-private`)
+- **Diagnostic data export**: Export of protocol responses from unsupported models with identifying information and program titles masked for troubleshooting and pull requests (`dump --mask-private`)
 
 Transfers select the main recording in its stored quality, using `DLNA.ORG_CI` and family-specific metadata to distinguish it from converted and mobile versions. An AVC or nasne three-times recording is transferred in that recorded format; original quality does not require DR mode. Dedicated Move resources are preferred for dubbing and excluded from streaming selection, including explicit selection with `--resource`.
 
@@ -154,7 +154,7 @@ All profiles retain standard recording metadata, media resource attributes and d
 > For this reason, models not listed above may work as they are, or they may require additional support.
 > 
 > pydtcpip isolates these device-dependent behaviors in library modules called "profiles" so that issues specific to a particular recording device can be addressed easily without affecting other recording devices.  
-> **If pydtcpip does not work with your TV or recorder, please share information as described in [Device-specific behavior and contributing to compatibility](#device-specific-behavior-and-contributing-to-compatibility) below.**
+> **If pydtcpip does not work with your TV or recorder, please see [Device-specific behavior and contributing to compatibility](#device-specific-behavior-and-contributing-to-compatibility) below to fix device support on your hardware and submit a pull request.**
 
 ## Installation
 
@@ -590,7 +590,7 @@ Metadata sidecars contain no authentication keys or Move resume secrets. They do
 As described above, **at the DLNA / UPnP layer, conventions differ by manufacturer and device not only in how the remaining Dubbing 10 copy count is represented, but also in proprietary SOAP actions, extension headers, the placement of namespace declarations, and even the meaning of HTTP status codes when a client is not registered.**
 
 **For this reason, reliable operation across all TVs and recorders requires validation based on responses from real devices and expansion of device profiles.**  
-If you use an unverified model, please help by providing device responses through the `dump` command.  
+If you use an unverified model, use the `dump` command to capture its responses when troubleshooting or implementing a profile fix.  
 The following command can export device descriptions, service definitions, recording listings, and video HEAD responses without requiring credentials or consuming the copy count.
 
 ```bash
@@ -623,10 +623,28 @@ Check the output for unmasked information before sharing it.
 ```
 
 > [!NOTE]  
-> When submitting an operation report in an [issue](https://github.com/tsukumijima/pydtcpip/issues), please attach logs exported with `--mask-private`.  
+> When sharing exported device responses publicly (such as alongside a pull request or operation log), always export them with `--mask-private`.  
 > The `--mask-private` option retains known technical attributes and unknown integers from 0 to 999 without leading zeros, which can help identify undocumented counters and status values. Fields named as identifiers, credentials, personal data, or dates are excluded from this integer exception. Program titles, broadcast dates and times, and user-assigned device names are masked; recording IDs and resource URL references receive consistent aliases, while UDNs, IP addresses, and MAC addresses are replaced with documentation values.  
 > Retaining unknown short integers is a diagnostic compromise and does not guarantee anonymity.  
 > Before publishing, please check the contents for any unmasked information as a precaution.
+
+> [!IMPORTANT]  
+> **Please fix unsupported devices on your side and send a pull request, rather than only opening an issue.**  
+> I have received far more compatibility reports and "this does not work on my recorder" issues than expected.  
+> It is difficult for me to spare more time on this project.  
+> Honestly, guessing causes from reports alone for hardware I do not own is difficult because device-specific quirks are involved (and I cannot verify fixes unless you test them anyway).  
+> Operation logs themselves are somewhat useful, but issues kept piling up faster than expected and got noisy, so I have turned off issue notifications.
+> 
+> Many compatibility reports already appear to be written with users' own LLM agents, which is completely fine.  
+> **If you are going to report an incompatibility, please have your LLM agent go as far as fixing it on your device and submit a pull request from the start.**  
+> Doing so prevents issues from multiplying endlessly and gives me hardware-verified code without extra effort on my end.
+> 
+> Anticipating this, **pydtcpip isolates device-specific behavior into independent profiles per manufacturer and model, so changes can be merged quickly unless they modify core behavior across the codebase.**  
+> Even when core behavior needs adjustment for a specific model, it can be implemented as a device-specific hook.  
+> As long as your change does not break other models and works on your actual device, I will merge it promptly, **so please use your agent and send a PR rather than just dropping an issue.**
+> 
+> This project was originally vibe-coded (though intended to be robust), and working across many environments matters above all else, so I am actively accepting PRs here.  
+> In short, **having an LLM write even more code myself for hardware I do not own is too much work, so please fix your model locally and bring your contributions together.**
 
 ## Research material
 

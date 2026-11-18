@@ -36,6 +36,8 @@ DBR-Z620 discards its resume state immediately if the control connection drops a
 
 ## Compatibility report workflow
 
+Issue notifications are turned off and the README directs users to fix device compatibility on their own hardware and submit pull requests rather than opening new issues. Apply the workflow below when explicitly reviewing a compatibility pull request or handling an existing compatibility issue.
+
 When handling compatibility reports, read the current issue, comments and supplied diagnostic material, and compare them with the current implementation. First implement and validate applicable improvements supported by the information already provided; request additional information only for unresolved questions that cannot be answered from that material.
 
 Close a report as completed once all actionable findings within the project's scope have been incorporated, including reports establishing that existing behavior already works. Closure means the report has been processed, not that every feature of the device has been verified. Untested operations or fields that the device does not expose are not, by themselves, reasons to keep a report open. Record supported behavior and its verification limits in the compatibility documentation.
