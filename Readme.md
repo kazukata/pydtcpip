@@ -96,7 +96,7 @@ Models are grouped by device family, with older models first within each group. 
 | [Sony BDZ-FBT2200](https://github.com/tsukumijima/pydtcpip/issues/12) | Unverified | Reported (API) | Reported | Unverified | Unverified |
 | [Sony PC TV Plus](https://github.com/tsukumijima/pydtcpip/issues/13) | Unverified | Reported with fresh connections | Reported (full recordings, API) | Unverified | Unverified |
 | [Sharp AQUOS BD-W2700](https://github.com/tsukumijima/pydtcpip/issues/1) | Reported | Reported | Unverified | Unverified | Unverified |
-| [Synology DS1520+ / sMedio DTCP DMS](https://github.com/tsukumijima/pydtcpip/issues/28) | Reported | Reported | Standard client cannot read the DTCP-IP endpoint from HTTP headers | Unverified | Unverified |
+| [Synology DS1520+ / sMedio DTCP Move](https://github.com/tsukumijima/pydtcpip/issues/28) | Reported | Reported | Standard client cannot read the DTCP-IP endpoint from HTTP headers | Unverified | Unverified |
 
 If discovery fails on Windows, select your PC's LAN address with `--interface`.
 
