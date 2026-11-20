@@ -723,10 +723,18 @@ class FakeMediaServer:
         framing: ResponseFraming = 'length',
         truncation: Truncation = 'none',
         packet_size: int = 4000,
+        content_types: dict[str, str] | None = None,
     ) -> None:
         """
-        Configure plaintext content, body framing, injected truncation, and packet size.
-        Encryption uses the exchange key issued by ake.
+        Serve media encrypted with the exchange key issued by the test source.
+
+        Args:
+            ake (FakeSourceAKE): Source handling authentication and Move
+            content (bytes): Unencrypted recording bytes
+            framing (ResponseFraming): HTTP body framing
+            truncation (Truncation): Optional premature termination of the recording
+            packet_size (int): Plaintext bytes per protected packet
+            content_types (dict[str, str] | None): Content-Type overrides by HTTP method
         """
 
         self.ake = ake
@@ -734,6 +742,7 @@ class FakeMediaServer:
         self.framing: ResponseFraming = framing
         self.truncation: Truncation = truncation
         self.packet_size = packet_size
+        self.content_types = content_types or {}
         self.port = 0
         # Record received methods and headers in order
         self.requests: list[tuple[str, dict[str, str]]] = []
@@ -794,7 +803,10 @@ class FakeMediaServer:
             status, error_headers = self.http_errors[request.method]
             return web.Response(status=status, headers=error_headers)
         headers = {
-            'Content-Type': f'application/x-dtcp1;DTCP1HOST=127.0.0.1;DTCP1PORT={self.ake.port};CONTENTFORMAT="video/mpeg"',
+            'Content-Type': self.content_types.get(
+                request.method,
+                f'application/x-dtcp1;DTCP1HOST=127.0.0.1;DTCP1PORT={self.ake.port};CONTENTFORMAT="video/mpeg"',
+            ),
             'contentFeatures.dlna.org': _CONTENT_FEATURES,
         }
 

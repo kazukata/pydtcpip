@@ -7,6 +7,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from types import TracebackType
 from typing import Self
+from urllib.parse import urlsplit
 
 import aiohttp
 
@@ -101,7 +102,7 @@ class DTCPClient:
 
     async def probe(self, target: Resource | str, *, time_range: TimeRange | None = None) -> MediaInfo:
         """
-        Obtain the DTCP-IP authentication endpoint and transfer information from a media HEAD response.
+        Obtain transfer information from a media HEAD response, using resource metadata if needed for authentication.
 
         Args:
             target (Resource | str): Resource or its URL
@@ -112,8 +113,9 @@ class DTCPClient:
         """
 
         url = target.url if isinstance(target, Resource) else target
+        resource = target if isinstance(target, Resource) else None
         headers = self._request_headers(time_range=time_range)
-        async with self._open('HEAD', url, headers) as (_, media_info):
+        async with self._open('HEAD', url, headers, resource=resource) as (_, media_info):
             return media_info
 
     async def stream(
@@ -140,20 +142,21 @@ class DTCPClient:
 
         transfer_id = uuid.uuid4().hex
         url = target.url if isinstance(target, Resource) else target
-        cleartext_size = target.cleartext_size if isinstance(target, Resource) else None
+        resource = target if isinstance(target, Resource) else None
+        cleartext_size = resource.cleartext_size if resource is not None else None
 
         # Obtain the authentication endpoint with HEAD and authenticate before requesting the body
-        media_info = await self.probe(url, time_range=time_range)
+        media_info = await self.probe(target, time_range=time_range)
         await dispatch_event(on_event, MediaInfoReceived(transfer_id=transfer_id, media_info=media_info))
         result = await self._authenticate(media_info, is_move=False, transfer_id=transfer_id, on_event=on_event)
         exchange_key = result.exchange_key
 
         headers = self._request_headers(time_range=time_range)
-        async with self._open('GET', url, headers) as (response, received_info):
+        async with self._open('GET', url, headers, resource=resource) as (response, received_info):
             await dispatch_event(
                 on_event, MediaInfoReceived(transfer_id=transfer_id, media_info=received_info, method='GET')
             )
-            if (received_info.host, received_info.port) != (media_info.host, media_info.port):
+            if (received_info.host.lower(), received_info.port) != (media_info.host.lower(), media_info.port):
                 raise DTCPError('The HEAD and GET responses specify different DTCP-IP authentication endpoints.')
             await dispatch_event(
                 on_event,
@@ -510,7 +513,12 @@ class DTCPClient:
 
     @asynccontextmanager
     async def _open(
-        self, method: str, url: str, headers: dict[str, str]
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        *,
+        resource: Resource | None = None,
     ) -> AsyncGenerator[tuple[aiohttp.ClientResponse, MediaInfo]]:
         """
         Send a media HTTP request and validate its DTCP-IP response and authentication endpoint.
@@ -519,6 +527,7 @@ class DTCPClient:
             method (str): HEAD or GET
             url (str): Resource URL
             headers (dict[str, str]): HTTP headers
+            resource (Resource | None): Advertised recording resource eligible for endpoint fallback
 
         Yields:
             tuple[aiohttp.ClientResponse, MediaInfo]: Response before reading its body and parsed media information
@@ -549,13 +558,44 @@ class DTCPClient:
                         },
                     )
 
-                # DTCP-IP responses advertise the authentication endpoint in Content-Type parameters
+                # Some recorders return a media Content-Type without the advertised DTCP-IP wrapper
                 content_type, parameters = parse_content_type(response.headers.get('Content-Type', ''))
-                if content_type != 'application/x-dtcp1':
-                    raise DTCPError(f'The stream is not protected by DTCP-IP (Content-Type: {content_type}).')
+                content_format = parameters.get('CONTENTFORMAT')
                 host = parameters.get('DTCP1HOST', '')
                 port = parameters.get('DTCP1PORT', '')
-                if host == '' or port.isdecimal() is False or not 1 <= int(port) <= 65535:
+
+                if content_type != 'application/x-dtcp1':
+                    if resource is None or not resource.protocol_info.is_dtcp:
+                        raise DTCPError(f'The stream is not protected by DTCP-IP (Content-Type: {content_type}).')
+                    if response.status not in (200, 206):
+                        raise DLNAError(
+                            f'Media {method} request did not return a recording response (HTTP {response.status}).',
+                            http_status=response.status,
+                        )
+
+                    xml_parameters = resource.protocol_info.content_type_parameters
+                    xml_host = xml_parameters.get('DTCP1HOST', '')
+                    xml_port = xml_parameters.get('DTCP1PORT', '')
+                    parsed_url = urlsplit(url)
+
+                    # The fallback must use an authentication endpoint on the same host as the resource URL
+                    if (
+                        parsed_url.scheme not in ('http', 'https')
+                        or parsed_url.hostname is None
+                        or xml_host == ''
+                        or xml_host.lower() != parsed_url.hostname.lower()
+                        or not xml_port.isdecimal()
+                        or not 1 <= int(xml_port) <= 65535
+                    ):
+                        raise DTCPError(
+                            'The Resource DTCP-IP authentication endpoint is missing, invalid, '
+                            'or does not match the resource host.'
+                        )
+
+                    host = xml_host
+                    port = xml_port
+                    content_format = xml_parameters.get('CONTENTFORMAT')
+                elif host == '' or port.isdecimal() is False or not 1 <= int(port) <= 65535:
                     raise DTCPError('The HTTP response has no valid DTCP-IP authentication endpoint.')
 
                 time_range = response.headers.get('TimeSeekRange.dlna.org')
@@ -567,7 +607,7 @@ class DTCPClient:
                     host=host,
                     port=int(port),
                     content_type=content_type,
-                    content_format=parameters.get('CONTENTFORMAT'),
+                    content_format=content_format,
                     content_features=response.headers.get('contentFeatures.dlna.org'),
                     content_length=int(content_length)
                     if content_length is not None and content_length.isdecimal()
