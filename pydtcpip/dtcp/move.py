@@ -295,6 +295,10 @@ class MoveTransaction:
             except (OSError, TimeoutError, DTCPError):
                 if self._connect is None or attempt >= len(delays):
                     raise
+                if command == MV_FINALIZE:
+                    # The request may have reached the source even though its response was lost,
+                    ## so a rejection of a later retry cannot rule out that the source accepted it
+                    self.is_finalize_result_unknown = True
                 _LOGGER.info(
                     f'No response to the Move control request (command: 0x{command:02x}); '
                     'reconnecting to send it again.'

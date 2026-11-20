@@ -233,6 +233,8 @@ class FakeSourceAKE:
         ## DBR-Z620 discards resume state on disconnect after finalization and rejects later requests
         self.reject_finalize = False
         self.reject_complete = False
+        # If set, reject finalize requests once this many finalize requests have been accepted
+        self.reject_finalize_after_accepts: int | None = None
         # Whether to reject the Move before authenticating the client
         self.reject_initiate = False
         # If set, wait for this event before finalization to represent receipt of the final HTTP response
@@ -484,7 +486,10 @@ class FakeSourceAKE:
             await self._respond(writer, frame, _REJECTED)
             raise FakeSourceError('Invalid finalize request length or exchange key label.')
         nonce = payload[1:9]
-        if self.reject_finalize is True:
+        if self.reject_finalize is True or (
+            self.reject_finalize_after_accepts is not None
+            and len(self.finalize_nonces) >= self.reject_finalize_after_accepts
+        ):
             self.log.append('finalize_rejected')
             await self._respond(writer, frame, _REJECTED, status=_ANY_OTHER_ERROR)
             return True

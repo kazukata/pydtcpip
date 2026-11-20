@@ -366,6 +366,38 @@ async def test_first_rejected_finalize_discards_received_data(
 
 
 @pytest.mark.anyio
+async def test_finalize_rejected_after_response_is_lost_may_be_committed(
+    authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice, tmp_path: Path
+) -> None:
+    """
+    A finalize retry rejected after the first response was lost may already have been accepted.
+    Retain received data because the source consumed a copy when it accepted the first request.
+    """
+
+    path = tmp_path / 'recording.ts'
+    resume_states: list[MoveResumeState | None] = []
+    events: list[TransferEvent] = []
+    async with (
+        FakeSourceAKE(authority, source_device) as source,
+        FakeMediaServer(source, _CONTENT) as server,
+        DTCPClient(sink_device.credentials(), timeout=5) as client,
+    ):
+        # Accept the first finalize request but drop its response, then reject the in-band retry
+        source.drop_finalize_responses = 1
+        source.reject_finalize_after_accepts = 1
+        with pytest.raises(MoveCommitmentRejectedError) as raised:
+            await client.move(server.url, FileSink(path), on_resume_state=resume_states.append, on_event=events.append)
+
+    assert raised.value.may_be_committed is True
+    assert source.log[-1] == 'finalize_rejected'
+    assert len(source.finalize_nonces) == 1
+    assert resume_states[-1] is None
+    assert path.exists() is False
+    assert (tmp_path / '.recording.ts.part').read_bytes() == _CONTENT
+    assert events[-1].type == 'move_finalize_rejected'
+
+
+@pytest.mark.anyio
 async def test_rejected_move_initiation_explains_the_refusal(
     authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice, tmp_path: Path
 ) -> None:
