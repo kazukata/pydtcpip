@@ -496,11 +496,13 @@ async def test_recording_is_committed_before_complete_response(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize('drop_reconnect_authentication', [0, 1])
 async def test_move_retries_finalize_after_response_is_lost(
     authority: FakeAuthority,
     sink_device: FakeDevice,
     source_device: FakeDevice,
     tmp_path: Path,
+    drop_reconnect_authentication: int,
 ) -> None:
     """Retry finalization on a fresh connection with the same nonce when its response is lost."""
 
@@ -513,12 +515,16 @@ async def test_move_retries_finalize_after_response_is_lost(
         DTCPClient(sink_device.credentials(), timeout=5) as client,
     ):
         source.drop_finalize_responses = 1
+        source.require_authenticated_finalize = True
+        source.drop_reconnect_authentication = drop_reconnect_authentication
         size = await client.move(server.url, FileSink(path), on_resume_state=resume_states.append)
 
     assert size == len(_CONTENT)
     assert path.read_bytes() == _CONTENT
     assert pending_path.exists() is False
     assert 'cancel' not in source.log
+    assert source.log.count('authentication_disconnected') == drop_reconnect_authentication
+    assert 'unauthenticated_finalize_rejected' not in source.log
     assert len(source.finalize_nonces) == 2
     assert source.finalize_nonces[0] == source.finalize_nonces[1]
     assert source.log[-2:] == ['finalize', 'complete']

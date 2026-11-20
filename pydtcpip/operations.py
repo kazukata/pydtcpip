@@ -11,6 +11,8 @@ from pydantic import ValidationError
 
 from pydtcpip.client import DTCPClient
 from pydtcpip.dlna.client import MediaServer
+from pydtcpip.dlna.description import parse_device_description
+from pydtcpip.dlna.profiles import select_profile
 from pydtcpip.errors import DLNAError, DTCPError
 from pydtcpip.events import EventCallback, MediaInfoReceived, TransferEvent, dispatch_event
 from pydtcpip.metadata import MetadataSidecar
@@ -280,7 +282,7 @@ async def run_move(
         client (DTCPClient): Authenticated DTCP-IP client
         target (Resource | str): Resource or its URL
         output (Path): Recording destination
-        media_server (MediaServer | None): Source recorder used to interpret HTTP errors
+        media_server (MediaServer | None): Source recorder used for reconnection policy and HTTP errors
         sidecar (MetadataSidecar | None): Metadata archive that records transfer events
         on_event (EventCallback | None): Event callback
 
@@ -295,6 +297,11 @@ async def run_move(
             FileSink(output),
             on_resume_state=lambda state: save_resume_state(path, state),
             on_event=_archive_events(sidecar, on_event),
+            reconnect_without_authentication=(
+                media_server.profile.uses_move_reconnect_without_authentication(media_server.description)
+                if media_server is not None
+                else False
+            ),
         )
     except DLNAError as ex:
         if media_server is not None:
@@ -323,6 +330,23 @@ async def run_resume(
     Returns:
         int: Number of committed recording bytes
     """
+
+    # Older resume files omit the connection policy; the metadata archive can identify the source
+    if (
+        'reconnect_without_authentication' not in resume_state.model_fields_set
+        and sidecar is not None
+        and sidecar.metadata.device_description_xml is not None
+    ):
+        try:
+            description = parse_device_description(
+                sidecar.metadata.device_location or '', sidecar.metadata.device_description_xml
+            )
+        except DLNAError:
+            # Optional metadata must not block recovery
+            pass
+        else:
+            if select_profile(description).uses_move_reconnect_without_authentication(description):
+                resume_state = resume_state.model_copy(update={'reconnect_without_authentication': True})
 
     # If finalization was verified and data is already in place, retry only the completion notification
     sink: FileSink | None = None

@@ -44,7 +44,7 @@ MOVE_ENCRYPTION_MODE = 0x6
 ## rejected: source rejected finalization; retries cannot finalize
 type MoveState = Literal['receiving', 'finalizing', 'finalized', 'completed', 'cancelled', 'rejected']
 
-# Function opening an authenticated control connection for retrying finalization, completion, or cancellation
+# Function opening a control connection for retrying finalization, completion, or cancellation
 type MoveControlConnector = Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]
 
 
@@ -65,6 +65,7 @@ class MoveTransaction:
         connection: tuple[asyncio.StreamReader, asyncio.StreamWriter] | None = None,
         connect: MoveControlConnector | None = None,
         on_event: EventCallback | None = None,
+        reconnect_without_authentication: bool = False,
     ) -> None:
         """
         Start a Move with the exchange key received during Move authentication.
@@ -78,6 +79,7 @@ class MoveTransaction:
             connection (tuple[asyncio.StreamReader, asyncio.StreamWriter] | None): Authentication connection, also used for finalization
             connect (MoveControlConnector | None): Reconnection function (None opens TCP without authentication)
             on_event (EventCallback | None): Event callback
+            reconnect_without_authentication (bool): Connection policy to save for subsequent resumption
         """
 
         self.host = host
@@ -95,6 +97,7 @@ class MoveTransaction:
         self._connection = connection
         self._connect = connect
         self._on_event = on_event
+        self._reconnect_without_authentication = reconnect_without_authentication
 
     @classmethod
     def from_resume_state(
@@ -128,6 +131,7 @@ class MoveTransaction:
             timeout=timeout,
             connect=connect,
             on_event=on_event,
+            reconnect_without_authentication=resume_state.reconnect_without_authentication,
         )
         transaction.state = resume_state.state
         transaction.has_received_all = True
@@ -179,6 +183,7 @@ class MoveTransaction:
             nonce=self._nonce,
             state=state,
             written_bytes=self.written_bytes,
+            reconnect_without_authentication=self._reconnect_without_authentication,
         )
 
     async def finalize(self) -> None:
@@ -271,9 +276,8 @@ class MoveTransaction:
     async def _exchange_with_reconnect(self, command: int, payload: bytes, *, role: int = 0) -> bytes:
         """
         Exchange a finalization or completion request, reconnecting when the response is lost.
-        These requests are idempotent for the same nonce, so a request whose response never
-        arrived can be sent again on a fresh connection instead of abandoning the Move.
-        A rejection is a definitive answer from the source and is never retried.
+        A retry uses the same Move key and, for finalization, the same nonce.
+        Stop on a rejection, which may mean the source has already discarded its resume state.
 
         Args:
             command (int): Move control command

@@ -622,3 +622,4 @@ class MoveResumeState(BaseModel):
     # finalized: finalize response verified, completion notification not yet sent
     state: Literal['finalizing', 'finalized']
     written_bytes: int
+    reconnect_without_authentication: bool = False

@@ -239,6 +239,11 @@ class FakeSourceAKE:
         self.wrong_command_finalize_responses = 0
         # Number of control connections opened by the sink
         self.connection_count = 0
+        # Some sources close the control connection immediately after authentication
+        self.close_after_authentication = False
+        # Other sources require each new connection to authenticate before accepting finalization
+        self.require_authenticated_finalize = False
+        self.drop_reconnect_authentication = 0
         # Whether to reject the Move before authenticating the client
         self.reject_initiate = False
         # If set, wait for this event before finalization to represent receipt of the final HTTP response
@@ -290,6 +295,7 @@ class FakeSourceAKE:
         self.disconnected.clear()
         self.connection_count += 1
         is_move = False
+        is_authenticated = False
         try:
             while True:
                 frame = await self._receive(reader)
@@ -314,7 +320,14 @@ class FakeSourceAKE:
 
                 # Authentication begins with the sink's CHALLENGE
                 elif frame.command == CHALLENGE:
+                    if is_move is False and self.drop_reconnect_authentication > 0:
+                        self.drop_reconnect_authentication -= 1
+                        self.log.append('authentication_disconnected')
+                        return
                     await self._authenticate(reader, writer, frame, is_move=is_move)
+                    if self.close_after_authentication is True:
+                        return
+                    is_authenticated = True
 
                 # A newer sink SRM arrives after the exchange key
                 elif frame.command == SRM_UPDATE:
@@ -323,6 +336,10 @@ class FakeSourceAKE:
                     await self._respond(writer, frame, _ACCEPTED)
 
                 elif frame.command == MV_FINALIZE:
+                    if self.require_authenticated_finalize is True and is_authenticated is False:
+                        self.log.append('unauthenticated_finalize_rejected')
+                        await self._respond(writer, frame, _REJECTED, status=_ANY_OTHER_ERROR)
+                        return
                     is_responded = await self._finalize(writer, frame)
                     if is_responded is False:
                         return

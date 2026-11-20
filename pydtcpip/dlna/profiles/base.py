@@ -79,6 +79,26 @@ class Profile:
     read_resource_details: Callable[[Resource], Resource] | None = None
     # Whether the family's SOAP server accepts requests on a reused TCP connection
     reuse_soap_connections: bool | None = None
+    # Whether the source accepts Move control requests on a new connection without a second authentication exchange
+    move_reconnect_without_authentication: Callable[[DeviceDescription], bool] | None = None
+
+    def uses_move_reconnect_without_authentication(self, description: DeviceDescription) -> bool:
+        """
+        Resolve the Move reconnection policy for the source.
+
+        Args:
+            description (DeviceDescription): Source device description
+
+        Returns:
+            bool: Whether to omit authentication when reconnecting for this Move
+        """
+
+        profile: Profile | None = self
+        while profile is not None:
+            if profile.move_reconnect_without_authentication is not None:
+                return profile.move_reconnect_without_authentication(description)
+            profile = profile.parent
+        return False
 
     def allows_soap_connection_reuse(self) -> bool:
         """

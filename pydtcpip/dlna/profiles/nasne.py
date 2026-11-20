@@ -104,4 +104,6 @@ NASNE = Profile(
     copy_count_fields=(CopyCountField(f'{{{_SONY_AV_NAMESPACE}}}COGCount', includes_final_move=True),),
     extension='nasne',
     read_resource_variant=_read_resource_variant,
+    # Sony nasne closes the control connection after authentication and accepts Move finalization on a fresh connection
+    move_reconnect_without_authentication=lambda description: description.model_name.lower() == 'nasne',
 )

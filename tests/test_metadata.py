@@ -2,6 +2,7 @@
 
 import asyncio
 import errno
+import json
 import os
 import socket
 from collections.abc import AsyncGenerator
@@ -948,6 +949,56 @@ async def test_cli_move_archives_metadata_and_completion(
     assert sink_device.private_key.hex() not in saved_text
     assert 'exchange_key' not in saved_text
     assert 'resume_secret' not in saved_text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('legacy_resume', [False, True])
+async def test_cli_move_and_resume_sony_nasne_without_reauthenticating(
+    authority: FakeAuthority,
+    sink_device: FakeDevice,
+    source_device: FakeDevice,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    legacy_resume: bool,
+) -> None:
+    """Select the Sony nasne policy from discovery and recover an interrupted Move from disk."""
+
+    monkeypatch.setenv('PYDTCPIP_CERTIFICATE', sink_device.certificate.hex())
+    monkeypatch.setenv('PYDTCPIP_PRIVATE_KEY', sink_device.private_key.hex())
+    monkeypatch.setattr('pydtcpip.__main__._COPY_COUNT_REQUERY_INTERVAL', 0.01)
+    output = tmp_path / 'recording.m2ts'
+    resume_path = output.with_name(f'{output.name}.pydtcpip-resume.json')
+    content = b'Test-only nasne recording' * 1000
+    args = ['--data-dir', str(tmp_path / 'device')]
+    async with (
+        FakeSourceAKE(authority, source_device) as source,
+        FakeMediaServer(source, content) as media,
+    ):
+        source.close_after_authentication = True
+        if legacy_resume is True:
+            source.drop_finalize_responses = 3
+        metadata_source = MetadataSource(
+            'Sony Computer Entertainment Inc.', 'nasne', recording_xml(resource_url=media.url)
+        )
+        async with metadata_source.serve() as (location, _):
+            result = await asyncio.to_thread(
+                CliRunner().invoke,
+                app,
+                [*args, 'move', str(output), '--server', location, '--id', 'V_42', '--yes'],
+            )
+        if legacy_resume is True:
+            assert result.exit_code == 1, result.output
+            state = json.loads(resume_path.read_bytes())
+            assert state.pop('reconnect_without_authentication') is True
+            resume_path.write_text(json.dumps(state), encoding='utf-8')
+            result = await asyncio.to_thread(CliRunner().invoke, app, [*args, 'resume', str(output)])
+        assert result.exit_code == 0, result.output
+        assert media.count('GET') == 1
+        assert source.log.count('challenge') == 1
+        assert len(set(source.finalize_nonces)) == 1
+        assert source.log[-2:] == ['finalize', 'complete']
+    assert output.read_bytes() == content
+    assert resume_path.exists() is False
 
 
 @pytest.mark.anyio

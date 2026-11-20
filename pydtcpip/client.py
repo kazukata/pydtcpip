@@ -209,18 +209,21 @@ class DTCPClient:
         *,
         on_resume_state: ResumeStateCallback | None = None,
         on_event: EventCallback | None = None,
+        reconnect_without_authentication: bool = False,
     ) -> int:
         """
         Receive a complete recording by GET Move and finalize after the sink persists it.
         This consumes one source copy; if only the final Move remains or copying is prohibited, the source recording is deleted.
-        If the finalize or completion response is lost, the complete data and resume state are retained and an exception
-        is raised. Use resume_move() to finalize the same transfer.
+        If the finalize or completion response is still missing after retries, the complete data and resume state
+        are retained. Use resume_move() to finalize the same transfer.
 
         Args:
             target (Resource | str): Resource or its URL
             sink (Sink): Destination for decrypted recording data
             on_resume_state (ResumeStateCallback | None): Callback to persist resume state before finalization
             on_event (EventCallback | None): Event callback
+            reconnect_without_authentication (bool): Use the saved Move key on a fresh TCP connection without
+                another authentication exchange. Enable this for sources that close the connection after authentication.
 
         Returns:
             int: Number of recording bytes written to the sink
@@ -255,9 +258,14 @@ class DTCPClient:
             timeout=self._timeout,
             connection=(reader, writer),
             connect=self._move_control_connector(
-                media_info.host, media_info.port, transfer_id=transfer_id, on_event=on_event
+                media_info.host,
+                media_info.port,
+                transfer_id=transfer_id,
+                on_event=on_event,
+                reconnect_without_authentication=reconnect_without_authentication,
             ),
             on_event=on_event,
+            reconnect_without_authentication=reconnect_without_authentication,
         )
 
         try:
@@ -315,6 +323,7 @@ class DTCPClient:
         *,
         on_resume_state: ResumeStateCallback | None = None,
         on_event: EventCallback | None = None,
+        reconnect_without_authentication: bool | None = None,
     ) -> int:
         """
         Resume finalization of a Move whose finalize or completion response was lost after saving the recording.
@@ -328,18 +337,28 @@ class DTCPClient:
                 and the sink has already been committed
             on_resume_state (ResumeStateCallback | None): Callback for updated resume state
             on_event (EventCallback | None): Event callback
+            reconnect_without_authentication (bool | None): Override the saved connection policy, for example
+                when restoring an older resume state for a source that closes the connection after authentication
 
         Returns:
             int: Number of committed recording bytes
         """
 
         transfer_id = uuid.uuid4().hex
+        if reconnect_without_authentication is not None:
+            resume_state = resume_state.model_copy(
+                update={'reconnect_without_authentication': reconnect_without_authentication}
+            )
         transaction = MoveTransaction.from_resume_state(
             resume_state,
             transfer_id=transfer_id,
             timeout=self._timeout,
             connect=self._move_control_connector(
-                resume_state.host, resume_state.port, transfer_id=transfer_id, on_event=on_event
+                resume_state.host,
+                resume_state.port,
+                transfer_id=transfer_id,
+                on_event=on_event,
+                reconnect_without_authentication=resume_state.reconnect_without_authentication,
             ),
             on_event=on_event,
         )
@@ -353,7 +372,13 @@ class DTCPClient:
             await transaction.close()
 
     def _move_control_connector(
-        self, host: str, port: int, *, transfer_id: str, on_event: EventCallback | None
+        self,
+        host: str,
+        port: int,
+        *,
+        transfer_id: str,
+        on_event: EventCallback | None,
+        reconnect_without_authentication: bool,
     ) -> MoveControlConnector:
         """
         Create a function that opens a control connection for retrying Move finalization or completion.
@@ -363,23 +388,16 @@ class DTCPClient:
             port (int): Source authentication port
             transfer_id (str): Transfer identifier for events
             on_event (EventCallback | None): Event callback
+            reconnect_without_authentication (bool): Whether to reuse the Move key without another authentication exchange
 
         Returns:
             MoveControlConnector: Function returning a control connection for finalization retries
         """
 
-        use_authentication = True
-
         async def connect() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-            nonlocal use_authentication
             reader, writer = await open_ake_connection(host, port, timeout=self._timeout)
-            # The specification requires only a new TCP connection, but DBR-Z620 closes unauthenticated finalize requests
-            ## On a normally authenticated connection it rejects finalize requests without resume state
-            ## nasne instead closes the connection right after authentication completes, so a finalize
-            ## request can only be delivered on an unauthenticated connection there
-            ## Alternate between the two forms so a retry can use whichever form the source answers
-            if use_authentication is True:
-                use_authentication = False
+            # Some sources, including DBR-Z620, require authentication on the new control connection
+            if reconnect_without_authentication is False:
                 try:
                     await self._run_authentication(
                         reader, writer, host, port, is_move=False, transfer_id=transfer_id, on_event=on_event
@@ -387,8 +405,6 @@ class DTCPClient:
                 except BaseException:
                     writer.close()
                     raise
-            else:
-                use_authentication = True
             return reader, writer
 
         return connect
