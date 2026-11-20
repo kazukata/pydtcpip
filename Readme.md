@@ -72,26 +72,31 @@ To select a resource explicitly, pass its number from `info` as `--resource N` t
 **The table distinguishes discovery and metadata retrieval from successful media transfers.**  
 “Verified” denotes maintainer testing; “Reported” denotes community testing linked from the model name. “Unverified” means that no successful test of that operation has been recorded, rather than that the device is incompatible.
 
-Models are grouped in the order nasne, REGZA TVs, REGZA Blu-ray recorders, Panasonic, Sony, and Sharp, with older models first within each group; Sony and Buffalo nasne models are grouped together as one series.
+Models are grouped by device family, with older models first within each group. Sony and Buffalo nasne models are grouped together as one series.
 
 | Model / report | Discovery | Recording listings | Streaming (non-Move) | Move | Push dubbing reception |
 | --- | --- | --- | --- | --- | --- |
-| [Sony nasne CECH-ZNR1J](https://github.com/tsukumijima/pydtcpip/issues/3) | Reported | Reported | Unverified | Unverified | Not supported |
-| [Sony nasne (model unspecified)](https://github.com/tsukumijima/pydtcpip/issues/16) | Reported (API) | Reported (API) | Reported (DR and 3x, API) | Unverified | Unverified |
+| [Sony nasne CECH-ZNR1J](https://github.com/tsukumijima/pydtcpip/issues/21) | Reported | Reported | Reported | [Reported](https://github.com/tsukumijima/pydtcpip/pull/25) | Not supported |
+| [Sony nasne (model unspecified)](https://github.com/tsukumijima/pydtcpip/issues/16) | Reported (API) | Reported (API) | Reported (DR and 3x, API) | [Reported](https://github.com/tsukumijima/pydtcpip/issues/16#issuecomment-6994279457) | Unverified |
 | [Buffalo nasne NS-N100](https://github.com/tsukumijima/pydtcpip/issues/4) | Reported ([see note](#model-specific-notes)) | Reported | Unverified | Unverified | Not supported |
+| [Toshiba REGZA 42ZG1](https://github.com/tsukumijima/pydtcpip/issues/22) | Not detected | Unverified | Unverified | Unverified | Reported |
 | Toshiba REGZA 43Z570L | Verified | Verified | Verified | Refused to start | Verified |
 | [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
 | Toshiba DBR-Z620 | Verified | Verified | Verified | Verified | Verified |
-| [Panasonic VIERA TH-65LX950](https://github.com/tsukumijima/pydtcpip/issues/14) | Reported | Reported | [Reported](https://github.com/tsukumijima/pydtcpip/issues/14#issuecomment-6946179349) | Connection closed at start | Reported |
+| [Toshiba REGZA DBR-4KZ200](https://github.com/tsukumijima/pydtcpip/issues/19) | Reported | Reported (including time-shift recordings) | Unverified | Unverified | Unverified |
+| [Panasonic VIERA TH-65LX950](https://github.com/tsukumijima/pydtcpip/issues/14#issuecomment-7005316755) | Reported | Reported | Reported | Refused to start | Reported |
 | [Panasonic DMR-BXT3000](https://github.com/tsukumijima/pydtcpip/issues/7) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
-| [Panasonic DMR-BRW1060 / BCW1060](https://github.com/tsukumijima/pydtcpip/issues/20) | Reported | Protected folders need DTCP-IP authentication ([see note](#model-specific-notes)) | Unverified | Unverified | Unverified |
+| [Panasonic DMR-BRW1060 / BCW1060](https://github.com/tsukumijima/pydtcpip/issues/20) | Reported | Protected folders refused ([see note](#model-specific-notes)) | Unverified | Unverified | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
-| [Panasonic DIGA DMR-4TS204S](https://github.com/tsukumijima/pydtcpip/issues/15) | Reported | Reported | Unverified | Unverified | Unverified |
+| [Panasonic DIGA DMR-4SE102](https://github.com/tsukumijima/pydtcpip/issues/26) | Reported | Reported | Unverified (4K advertises DTCP2) | Unverified | Unverified |
+| [Panasonic DIGA DMR-4TS204](https://github.com/tsukumijima/pydtcpip/issues/27) | Reported | Reported | Reported | Reported (including final Move) | Unverified |
+| [Panasonic DIGA DMR-4TS204S](https://github.com/tsukumijima/pydtcpip/issues/15) | Reported | Reported | Reported | Reported | Unverified |
 | [Sony BDZ-ZW1500](https://github.com/tsukumijima/pydtcpip/issues/2) | Reported | Reported | Reported (10 seconds) | Unverified | Unverified |
 | [Sony BDZ-FBT2200](https://github.com/tsukumijima/pydtcpip/issues/12) | Unverified | Reported (API) | Reported | Unverified | Unverified |
 | [Sony PC TV Plus](https://github.com/tsukumijima/pydtcpip/issues/13) | Unverified | Reported with fresh connections | Reported (full recordings, API) | Unverified | Unverified |
 | [Sharp AQUOS BD-W2700](https://github.com/tsukumijima/pydtcpip/issues/1) | Reported | Reported | Unverified | Unverified | Unverified |
+| [Synology DS1520+ / sMedio DTCP DMS](https://github.com/tsukumijima/pydtcpip/issues/28) | Reported | Reported | Standard client cannot read the DTCP-IP endpoint from HTTP headers | Unverified | Unverified |
 
 If discovery fails on Windows, select your PC's LAN address with `--interface`.
 
@@ -100,13 +105,15 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
 - **Sony and Buffalo nasne**
   - Start transfers from the PC.  
     The [nasne HOME migration feature](https://www.buffalo.jp/s3/guide/ns-n100/04/ja/recorder/dubbing.html) requires the destination nasne to start the transfer.
+  - For GET Move from a Sony nasne, select the recorder from the device list or specify its description URL with `--server`.
+    If a Python application calls `DTCPClient.move()` directly, pass `reconnect_without_authentication=True` for this source.
 - **Buffalo nasne NS-N100**
   - If the nasne stops answering discovery requests, run `pydtcpip discover --timeout 35` to give its periodic announcements time to arrive.  
     The TUI listens for these announcements in the background and lists the initial search results as soon as they are ready.
   - If the nasne disappears from discovery even with the correct `--interface`, it may still be reachable by its device description URL.  
     Pass the URL to `info --server`.  
     In the TUI, press `+` and enter the URL.  
-    See the reports for [Windows](https://github.com/tsukumijima/pydtcpip/issues/4#issuecomment-6931358437) and [macOS](https://github.com/tsukumijima/pydtcpip/issues/17).
+    See the reports for [Windows](https://github.com/tsukumijima/pydtcpip/issues/4#issuecomment-6960981018) and [macOS](https://github.com/tsukumijima/pydtcpip/issues/17).
   - Copy-controlled recordings received through nasne HOME migration have only the final Move available.  
     pydtcpip displays `Copies remaining: 0` for these recordings because the count excludes that final Move.  
     A successful final Move deletes the recording from the source nasne.
@@ -115,8 +122,8 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
     In testing, the TV refused to start a Move initiated from the PC.
   - Other REGZA TV models may also support only dubbing initiated from the TV.
 - **Panasonic DMR-BRW1060 / BCW1060**
-  - The folder structure, photos, music and tuner channels list without credentials, but the recorded-programme folders (`AV_ALL` and similar) return a client authorization error (UPnP 720).  
-    Enabling home streaming (お部屋ジャンプリンク) and permitting this PC in the recorder's connected-device list did not clear it; the recorder lists its protected recordings only to a DTCP-IP-authenticated client, so configure DTCP-IP credentials to browse them. `dump` continues past the blocked folders and records the refusal.
+  - Folder structure, photos, music and tuner channels can be listed. Protected recording folders such as `AV_ALL` returned UPnP error 720 even with home streaming (お部屋ジャンプリンク) enabled and the PC allowed on the recorder.
+  - `dump` records the refusal and continues with other folders. DTCP-IP authentication in pydtcpip takes place during a transfer, after selecting a recording.
 - **Panasonic DIGA DMR-4TS204S**
   - If `info` lists only converted resources for a recording, choose a resource number from that list.  
     Pass it to `stream` or `move` as `--resource N` for the same recording.
