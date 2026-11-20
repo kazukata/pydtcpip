@@ -723,6 +723,7 @@ class FakeMediaServer:
         framing: ResponseFraming = 'length',
         truncation: Truncation = 'none',
         packet_size: int = 4000,
+        content_types: dict[str, str] | None = None,
     ) -> None:
         """
         Configure plaintext content, body framing, injected truncation, and packet size.
@@ -734,6 +735,7 @@ class FakeMediaServer:
         self.framing: ResponseFraming = framing
         self.truncation: Truncation = truncation
         self.packet_size = packet_size
+        self.content_types = content_types or {}
         self.port = 0
         # Record received methods and headers in order
         self.requests: list[tuple[str, dict[str, str]]] = []
@@ -794,7 +796,10 @@ class FakeMediaServer:
             status, error_headers = self.http_errors[request.method]
             return web.Response(status=status, headers=error_headers)
         headers = {
-            'Content-Type': f'application/x-dtcp1;DTCP1HOST=127.0.0.1;DTCP1PORT={self.ake.port};CONTENTFORMAT="video/mpeg"',
+            'Content-Type': self.content_types.get(
+                request.method,
+                f'application/x-dtcp1;DTCP1HOST=127.0.0.1;DTCP1PORT={self.ake.port};CONTENTFORMAT="video/mpeg"',
+            ),
             'contentFeatures.dlna.org': _CONTENT_FEATURES,
         }
 

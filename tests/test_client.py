@@ -27,6 +27,19 @@ from tests.fakes import (
 _CONTENT = os.urandom(4000 * 3 + 1234)
 
 
+def _resource_for_server(url: str, dtcp_port: int) -> Resource:
+    """Build a DTCP-protected Resource with its authentication endpoint in protocolInfo."""
+    return Resource(
+        url=url,
+        protocol_info=parse_protocol_info(
+            f'http-get:*:application/x-dtcp1;DTCP1HOST=127.0.0.1;DTCP1PORT={dtcp_port};'
+            'CONTENTFORMAT="video/mpeg":DLNA.ORG_CI=0'
+        ),
+        attributes={},
+        raw_xml='',
+    )
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize('framing', ['length', 'chunked'])
 async def test_stream_decrypts_all_data(
@@ -53,6 +66,64 @@ async def test_stream_decrypts_all_data(
     responses = [event for event in events if isinstance(event, MediaInfoReceived)]
     assert [event.method for event in responses] == ['HEAD', 'GET']
     assert responses[1].media_info.headers['Content-Type'].startswith('application/x-dtcp1;')
+
+
+@pytest.mark.anyio
+async def test_stream_uses_resource_protocol_info_when_http_content_type_omits_dtcp_endpoint(
+    authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice
+) -> None:
+    """Use the advertised Resource endpoint when HEAD and GET omit DTCP parameters."""
+
+    received = bytearray()
+
+    async def on_data(chunk: bytes) -> None:
+        received.extend(chunk)
+
+    content_type = 'video/vnd.dlna.mpeg-tts'
+
+    async with (
+        FakeSourceAKE(authority, source_device) as source,
+        FakeMediaServer(
+            source,
+            _CONTENT,
+            content_types={'HEAD': content_type, 'GET': content_type},
+        ) as server,
+        DTCPClient(sink_device.credentials(), timeout=5) as client,
+    ):
+        resource = _resource_for_server(server.url, source.port)
+        size = await client.stream(resource, on_data)
+
+    assert bytes(received) == _CONTENT
+    assert size == len(_CONTENT)
+    assert source.errors == []
+
+
+@pytest.mark.anyio
+async def test_stream_rejects_different_head_and_get_dtcp_endpoints(
+    authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice
+) -> None:
+    """Reject a GET authentication endpoint that differs from the HEAD endpoint."""
+
+    async def on_data(chunk: bytes) -> None:
+        pytest.fail('A mismatched DTCP endpoint must not produce media bytes')
+
+    async with (
+        FakeSourceAKE(authority, source_device) as source,
+        FakeMediaServer(
+            source,
+            _CONTENT,
+            content_types={
+                'HEAD': 'video/vnd.dlna.mpeg-tts',
+                'GET': (
+                    f'application/x-dtcp1;DTCP1HOST=127.0.0.1;DTCP1PORT={source.port + 1};CONTENTFORMAT="video/mpeg"'
+                ),
+            },
+        ) as server,
+        DTCPClient(sink_device.credentials(), timeout=5) as client,
+    ):
+        resource = _resource_for_server(server.url, source.port)
+        with pytest.raises(DTCPError, match='different DTCP-IP authentication endpoints'):
+            await client.stream(resource, on_data)
 
 
 @pytest.mark.anyio
