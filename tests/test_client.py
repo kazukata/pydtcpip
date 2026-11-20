@@ -7,6 +7,7 @@ import pytest
 
 from pydtcpip.client import DTCPClient
 from pydtcpip.dlna.protocol_info import parse_protocol_info
+from pydtcpip.dtcp.ake import open_ake_connection as _open_ake_connection
 from pydtcpip.errors import DLNAError, DTCPError, MoveCommitmentRejectedError
 from pydtcpip.events import MediaInfoReceived, TransferEvent
 from pydtcpip.models import MoveResumeState, Resource, TimeRange
@@ -27,12 +28,12 @@ from tests.fakes import (
 _CONTENT = os.urandom(4000 * 3 + 1234)
 
 
-def _resource_for_server(url: str, dtcp_port: int) -> Resource:
+def _resource_for_server(url: str, dtcp_port: int, dtcp_host: str = '127.0.0.1') -> Resource:
     """Build a DTCP-protected Resource with its authentication endpoint in protocolInfo."""
     return Resource(
         url=url,
         protocol_info=parse_protocol_info(
-            f'http-get:*:application/x-dtcp1;DTCP1HOST=127.0.0.1;DTCP1PORT={dtcp_port};'
+            f'http-get:*:application/x-dtcp1;DTCP1HOST={dtcp_host};DTCP1PORT={dtcp_port};'
             'CONTENTFORMAT="video/mpeg":DLNA.ORG_CI=0'
         ),
         attributes={},
@@ -91,6 +92,49 @@ async def test_stream_uses_resource_protocol_info_when_http_content_type_omits_d
         DTCPClient(sink_device.credentials(), timeout=5) as client,
     ):
         resource = _resource_for_server(server.url, source.port)
+        size = await client.stream(resource, on_data)
+
+    assert bytes(received) == _CONTENT
+    assert size == len(_CONTENT)
+    assert source.errors == []
+
+
+@pytest.mark.anyio
+async def test_stream_accepts_case_insensitive_head_and_get_dtcp_hosts(
+    authority: FakeAuthority,
+    sink_device: FakeDevice,
+    source_device: FakeDevice,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accept matching DTCP hosts that differ only in letter casing."""
+
+    async def open_local_ake_connection(_host: str, port: int, *, timeout: float):
+        return await _open_ake_connection('127.0.0.1', port, timeout=timeout)
+
+    monkeypatch.setattr(
+        'pydtcpip.client.open_ake_connection',
+        open_local_ake_connection,
+    )
+
+    received = bytearray()
+
+    async def on_data(chunk: bytes) -> None:
+        received.extend(chunk)
+
+    async with (
+        FakeSourceAKE(authority, source_device) as source,
+        FakeMediaServer(
+            source,
+            _CONTENT,
+            content_types={
+                'HEAD': 'video/vnd.dlna.mpeg-tts',
+                'GET': (f'application/x-dtcp1;DTCP1HOST=localhost;DTCP1PORT={source.port};CONTENTFORMAT="video/mpeg"'),
+            },
+        ) as server,
+        DTCPClient(sink_device.credentials(), timeout=5) as client,
+    ):
+        resource_url = server.url.replace('127.0.0.1', 'localhost')
+        resource = _resource_for_server(resource_url, source.port, dtcp_host='LOCALHOST')
         size = await client.stream(resource, on_data)
 
     assert bytes(received) == _CONTENT

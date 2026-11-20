@@ -158,7 +158,7 @@ class DTCPClient:
             await dispatch_event(
                 on_event, MediaInfoReceived(transfer_id=transfer_id, media_info=received_info, method='GET')
             )
-            if (received_info.host, received_info.port) != (media_info.host, media_info.port):
+            if (received_info.host.lower(), received_info.port) != (media_info.host.lower(), media_info.port):
                 raise DTCPError('The HEAD and GET responses specify different DTCP-IP authentication endpoints.')
             await dispatch_event(
                 on_event,
