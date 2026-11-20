@@ -233,6 +233,12 @@ class FakeSourceAKE:
         ## DBR-Z620 discards resume state on disconnect after finalization and rejects later requests
         self.reject_finalize = False
         self.reject_complete = False
+        # If set, reject finalize requests once this many finalize requests have been accepted
+        self.reject_finalize_after_accepts: int | None = None
+        # Number of accepted finalize requests answered with the completion command in the response
+        self.wrong_command_finalize_responses = 0
+        # Number of control connections opened by the sink
+        self.connection_count = 0
         # Whether to reject the Move before authenticating the client
         self.reject_initiate = False
         # If set, wait for this event before finalization to represent receipt of the final HTTP response
@@ -282,6 +288,7 @@ class FakeSourceAKE:
         """
 
         self.disconnected.clear()
+        self.connection_count += 1
         is_move = False
         try:
             while True:
@@ -484,7 +491,10 @@ class FakeSourceAKE:
             await self._respond(writer, frame, _REJECTED)
             raise FakeSourceError('Invalid finalize request length or exchange key label.')
         nonce = payload[1:9]
-        if self.reject_finalize is True:
+        if self.reject_finalize is True or (
+            self.reject_finalize_after_accepts is not None
+            and len(self.finalize_nonces) >= self.reject_finalize_after_accepts
+        ):
             self.log.append('finalize_rejected')
             await self._respond(writer, frame, _REJECTED, status=_ANY_OTHER_ERROR)
             return True
@@ -502,6 +512,10 @@ class FakeSourceAKE:
         if self.drop_finalize_responses > 0:
             self.drop_finalize_responses -= 1
             return False
+        if self.wrong_command_finalize_responses > 0:
+            self.wrong_command_finalize_responses -= 1
+            await self._respond(writer, frame, _ACCEPTED, payload[:9] + digest[10:], command=MV_COMPLETE)
+            return True
         await self._respond(writer, frame, _ACCEPTED, payload[:9] + digest[10:])
         return True
 
@@ -579,7 +593,14 @@ class FakeSourceAKE:
         await self._write(writer, header, payload)
 
     async def _respond(
-        self, writer: asyncio.StreamWriter, request: _Frame, ctype: int, payload: bytes = b'', *, status: int = 0x1
+        self,
+        writer: asyncio.StreamWriter,
+        request: _Frame,
+        ctype: int,
+        payload: bytes = b'',
+        *,
+        status: int = 0x1,
+        command: int | None = None,
     ) -> None:
         """
         Respond using the request header with a new ctype and status.
@@ -590,10 +611,13 @@ class FakeSourceAKE:
             ctype (int): Response type
             payload (bytes): Response payload
             status (int): Rejection status (acceptance always uses 0)
+            command (int | None): Command value for the response, replacing the request command if set
         """
 
         header = bytearray(request.header)
         header[3] = (header[3] & 0xF0) | ctype
+        if command is not None:
+            header[5] = command
         header[10] &= 0xF0
         if ctype != _ACCEPTED:
             header[10] |= status

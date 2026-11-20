@@ -356,7 +356,7 @@ class DTCPClient:
         self, host: str, port: int, *, transfer_id: str, on_event: EventCallback | None
     ) -> MoveControlConnector:
         """
-        Create a function that authenticates a control connection for retrying Move finalization or completion.
+        Create a function that opens a control connection for retrying Move finalization or completion.
 
         Args:
             host (str): Source authentication address
@@ -365,20 +365,30 @@ class DTCPClient:
             on_event (EventCallback | None): Event callback
 
         Returns:
-            MoveControlConnector: Function returning an authenticated control connection
+            MoveControlConnector: Function returning a control connection for finalization retries
         """
 
+        use_authentication = True
+
         async def connect() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+            nonlocal use_authentication
+            reader, writer = await open_ake_connection(host, port, timeout=self._timeout)
             # The specification requires only a new TCP connection, but DBR-Z620 closes unauthenticated finalize requests
             ## On a normally authenticated connection it rejects finalize requests without resume state
-            reader, writer = await open_ake_connection(host, port, timeout=self._timeout)
-            try:
-                await self._run_authentication(
-                    reader, writer, host, port, is_move=False, transfer_id=transfer_id, on_event=on_event
-                )
-            except BaseException:
-                writer.close()
-                raise
+            ## nasne instead closes the connection right after authentication completes, so a finalize
+            ## request can only be delivered on an unauthenticated connection there
+            ## Alternate between the two forms so a retry can use whichever form the source answers
+            if use_authentication is True:
+                use_authentication = False
+                try:
+                    await self._run_authentication(
+                        reader, writer, host, port, is_move=False, transfer_id=transfer_id, on_event=on_event
+                    )
+                except BaseException:
+                    writer.close()
+                    raise
+            else:
+                use_authentication = True
             return reader, writer
 
         return connect
