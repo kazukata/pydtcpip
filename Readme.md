@@ -82,6 +82,7 @@ Models are grouped by device family, with older models first within each group. 
 | [Toshiba REGZA 42ZG1](https://github.com/tsukumijima/pydtcpip/issues/22) | Not detected | Unverified | Unverified | Unverified | Reported |
 | Toshiba REGZA 43Z570L | Verified | Verified | Verified | Refused to start | Verified |
 | [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
+| [Toshiba RD-BR600](https://github.com/tsukumijima/pydtcpip/issues/31) | Unverified (direct URL used) | Reported | Reported (full recording, API) | Unverified | Unverified |
 | Toshiba DBR-Z620 | Verified | Verified | Verified | Verified | Verified |
 | [Toshiba REGZA DBR-4KZ200](https://github.com/tsukumijima/pydtcpip/issues/19) | Reported | Reported (including time-shift recordings) | Unverified | Unverified | Unverified |
 | [Panasonic VIERA TH-65LX950](https://github.com/tsukumijima/pydtcpip/issues/14#issuecomment-7005316755) | Reported | Reported | Reported | Refused to start | Reported |
@@ -96,7 +97,7 @@ Models are grouped by device family, with older models first within each group. 
 | [Sony BDZ-FBT2200](https://github.com/tsukumijima/pydtcpip/issues/12) | Unverified | Reported (API) | Reported | Unverified | Unverified |
 | [Sony PC TV Plus](https://github.com/tsukumijima/pydtcpip/issues/13) | Unverified | Reported with fresh connections | Reported (full recordings, API) | Unverified | Unverified |
 | [Sharp AQUOS BD-W2700](https://github.com/tsukumijima/pydtcpip/issues/1) | Reported | Reported | Unverified | Unverified | Unverified |
-| [Synology DS1520+ / sMedio DTCP Move](https://github.com/tsukumijima/pydtcpip/issues/28) | Reported | Reported | Standard client cannot read the DTCP-IP endpoint from HTTP headers | Unverified | Unverified |
+| [Synology DS1520+ / sMedio DTCP Move](https://github.com/tsukumijima/pydtcpip/issues/28) | Reported | Reported | [Reported](https://github.com/tsukumijima/pydtcpip/pull/29) (select a recording to use its metadata) | Unverified | Unverified |
 
 If discovery fails on Windows, select your PC's LAN address with `--interface`.
 
