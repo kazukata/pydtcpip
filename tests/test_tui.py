@@ -504,7 +504,10 @@ async def test_stream_fallback_choice_applies_only_to_current_queue(
             checkbox = app.screen.query_one('#repeat-choice', Checkbox)
             assert checkbox.value is False
             if repeat is True:
-                assert await pilot.click('#repeat-choice') is True
+                # Pilot.click captures the target coordinates before processing pending layout work
+                await _wait(pilot.pause, lambda: bool(checkbox.region))
+                assert await pilot.click(checkbox) is True
+                assert checkbox.value is True
             app.screen.query_one('#choice-stream', Button).press()
             if repeat is False:
                 await _wait(
