@@ -158,9 +158,7 @@ async def test_stream_rejects_different_head_and_get_dtcp_endpoints(
             _CONTENT,
             content_types={
                 'HEAD': 'video/vnd.dlna.mpeg-tts',
-                'GET': (
-                    f'application/x-dtcp1;DTCP1HOST=127.0.0.1;DTCP1PORT={source.port + 1};CONTENTFORMAT="video/mpeg"'
-                ),
+                'GET': ('application/x-dtcp1;DTCP1HOST=127.0.0.1;DTCP1PORT=1;CONTENTFORMAT="video/mpeg"'),
             },
         ) as server,
         DTCPClient(sink_device.credentials(), timeout=5) as client,
@@ -168,6 +166,32 @@ async def test_stream_rejects_different_head_and_get_dtcp_endpoints(
         resource = _resource_for_server(server.url, source.port)
         with pytest.raises(DTCPError, match='different DTCP-IP authentication endpoints'):
             await client.stream(resource, on_data)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('method', ['HEAD', 'GET'])
+async def test_stream_rejects_redirects_when_using_resource_endpoint(
+    authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice, method: str
+) -> None:
+    """Reject a redirect before treating its response as media."""
+
+    async def on_data(chunk: bytes) -> None:
+        pytest.fail('A redirect must not produce media bytes')
+
+    async with (
+        FakeSourceAKE(authority, source_device) as source,
+        FakeMediaServer(
+            source, _CONTENT, content_types={'HEAD': 'video/vnd.dlna.mpeg-tts', 'GET': 'video/vnd.dlna.mpeg-tts'}
+        ) as server,
+        DTCPClient(sink_device.credentials(), timeout=5) as client,
+    ):
+        server.http_errors[method] = (302, {'Location': server.url + '?redirect', 'Content-Type': 'text/html'})
+        resource = _resource_for_server(server.url, source.port)
+        with pytest.raises(DLNAError) as error:
+            await client.stream(resource, on_data)
+        assert error.value.http_status == 302
+        assert server.count('GET') == (1 if method == 'GET' else 0)
+        assert source.log.count('challenge') == (1 if method == 'GET' else 0)
 
 
 @pytest.mark.anyio

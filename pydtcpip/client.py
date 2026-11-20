@@ -102,7 +102,7 @@ class DTCPClient:
 
     async def probe(self, target: Resource | str, *, time_range: TimeRange | None = None) -> MediaInfo:
         """
-        Obtain the DTCP-IP authentication endpoint and transfer information from a media HEAD response.
+        Obtain transfer information from a media HEAD response, using resource metadata if needed for authentication.
 
         Args:
             target (Resource | str): Resource or its URL
@@ -142,7 +142,8 @@ class DTCPClient:
 
         transfer_id = uuid.uuid4().hex
         url = target.url if isinstance(target, Resource) else target
-        cleartext_size = target.cleartext_size if isinstance(target, Resource) else None
+        resource = target if isinstance(target, Resource) else None
+        cleartext_size = resource.cleartext_size if resource is not None else None
 
         # Obtain the authentication endpoint with HEAD and authenticate before requesting the body
         media_info = await self.probe(target, time_range=time_range)
@@ -151,10 +152,7 @@ class DTCPClient:
         exchange_key = result.exchange_key
 
         headers = self._request_headers(time_range=time_range)
-        async with self._open('GET', url, headers, resource=target if isinstance(target, Resource) else None) as (
-            response,
-            received_info,
-        ):
+        async with self._open('GET', url, headers, resource=resource) as (response, received_info):
             await dispatch_event(
                 on_event, MediaInfoReceived(transfer_id=transfer_id, media_info=received_info, method='GET')
             )
@@ -529,6 +527,7 @@ class DTCPClient:
             method (str): HEAD or GET
             url (str): Resource URL
             headers (dict[str, str]): HTTP headers
+            resource (Resource | None): Advertised recording resource eligible for endpoint fallback
 
         Yields:
             tuple[aiohttp.ClientResponse, MediaInfo]: Response before reading its body and parsed media information
@@ -559,8 +558,7 @@ class DTCPClient:
                         },
                     )
 
-                # Prefer the HTTP DTCP endpoint. Some recorders omit it from the
-                # response Content-Type even though the advertised Resource is DTCP protected.
+                # Some recorders return a media Content-Type without the advertised DTCP-IP wrapper
                 content_type, parameters = parse_content_type(response.headers.get('Content-Type', ''))
                 content_format = parameters.get('CONTENTFORMAT')
                 host = parameters.get('DTCP1HOST', '')
@@ -569,14 +567,18 @@ class DTCPClient:
                 if content_type != 'application/x-dtcp1':
                     if resource is None or not resource.protocol_info.is_dtcp:
                         raise DTCPError(f'The stream is not protected by DTCP-IP (Content-Type: {content_type}).')
+                    if response.status not in (200, 206):
+                        raise DLNAError(
+                            f'Media {method} request did not return a recording response (HTTP {response.status}).',
+                            http_status=response.status,
+                        )
 
                     xml_parameters = resource.protocol_info.content_type_parameters
                     xml_host = xml_parameters.get('DTCP1HOST', '')
                     xml_port = xml_parameters.get('DTCP1PORT', '')
                     parsed_url = urlsplit(url)
 
-                    # Only accept XML endpoint metadata when it points to the same
-                    # recorder that serves this Resource URL.
+                    # The fallback must use an authentication endpoint on the same host as the resource URL
                     if (
                         parsed_url.scheme not in ('http', 'https')
                         or parsed_url.hostname is None

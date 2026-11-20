@@ -726,8 +726,15 @@ class FakeMediaServer:
         content_types: dict[str, str] | None = None,
     ) -> None:
         """
-        Configure plaintext content, body framing, injected truncation, and packet size.
-        Encryption uses the exchange key issued by ake.
+        Serve media encrypted with the exchange key issued by the test source.
+
+        Args:
+            ake (FakeSourceAKE): Source handling authentication and Move
+            content (bytes): Unencrypted recording bytes
+            framing (ResponseFraming): HTTP body framing
+            truncation (Truncation): Optional premature termination of the recording
+            packet_size (int): Plaintext bytes per protected packet
+            content_types (dict[str, str] | None): Content-Type overrides by HTTP method
         """
 
         self.ake = ake
