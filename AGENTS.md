@@ -77,3 +77,11 @@ The README may include general research context and indirect hints that help use
 Commit message prefixes are `Add:`, `Fix:`, `Update:`, `Refactor:`, `Build(deps):`, and `Release:`.
 
 Append issue references to the subject of every issue-related commit, using `(#12, #13)` for related reports. Use `(Close #123)` on the commit that completes the work required to close a report; for multiple closures, repeat the keyword, as in `(Close #12, Close #13)`. When a commit closes one report but only contributes to another, use separate groups, such as `(#13) (Close #12)`. Determine the relationship from the issue, its comments and the actual change; a previously closed issue only needs a normal reference in later related commits. Commits with no direct issue relationship need no issue reference.
+
+## Release workflow
+
+1. Set the new version in `pyproject.toml` and run `uv sync` to update `uv.lock`.
+2. Commit only those two files together with the message `Release: version x.x.x`, substituting the new version.
+3. Tag that commit with `git tag vX.X.X` using the same version.
+4. Run `git push` to publish the branch, then run `git push --tags` to publish the tag. GitHub Actions runs the branch CI and builds and publishes the PyPI package from the tag.
+5. After the tag is on GitHub, create and publish a GitHub Release for that tag. Select the existing tag and use **Generate release notes** in GitHub, or run `gh release create vX.X.X --verify-tag --generate-notes`. GitHub Actions does not create the GitHub Release.
