@@ -217,6 +217,22 @@ def test_nasne_model_names_select_a_unique_profile(manufacturer: str, model_name
     assert deepest_matches == [expected_profile]
 
 
+def test_regza_recorder_is_not_given_the_tv_listing_policy() -> None:
+    """Recognize a recorder whose manufacturer uses the REGZA company name."""
+
+    description = parse_device_description(
+        'http://192.0.2.1/description.xml',
+        '<root xmlns="urn:schemas-upnp-org:device-1-0"><device>'
+        '<deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>'
+        '<manufacturer>TOSHIBA TVS REGZA</manufacturer><modelDescription>TOSHIBA RECORDER</modelDescription>'
+        '<modelName>DBR-4KZ00</modelName></device></root>',
+    )
+
+    profile = select_profile(description)
+    assert profile.name == 'toshiba'
+    assert profile.resolve_has_listing_only_metadata() is False
+
+
 def test_nasne_reports_client_registration_refusal() -> None:
     # Distinguish nasne's 403 from authentication failures so users can find client registration
     error = NASNE.resolve_http_status()(403, 'http://192.0.2.1/2', None)

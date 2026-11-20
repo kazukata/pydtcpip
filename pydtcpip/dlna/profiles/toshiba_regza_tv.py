@@ -7,17 +7,19 @@ from pydtcpip.dlna.profiles.toshiba import TOSHIBA
 
 def _matches(description: DeviceDescription) -> bool:
     """
-    Match a REGZA television's manufacturer name.
+    Match REGZA televisions by the manufacturer and model description.
 
     Args:
         description (DeviceDescription): Device description to inspect
 
     Returns:
-        bool: True when the manufacturer contains REGZA
+        bool: True when REGZA identifies the manufacturer and the description does not identify a recorder
     """
 
-    # REGZA TVs report `TOSHIBA TVS REGZA` as the manufacturer (recorders report only `TOSHIBA`)
-    return 'REGZA' in description.manufacturer.upper()
+    # Newer recorders can report TOSHIBA TVS REGZA as well, with TOSHIBA RECORDER in the description
+    return (
+        'REGZA' in description.manufacturer.upper() and 'RECORDER' not in (description.model_description or '').upper()
+    )
 
 
 TOSHIBA_REGZA_TV = Profile(
