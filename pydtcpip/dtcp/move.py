@@ -341,6 +341,8 @@ class MoveTransaction:
             await self.close()
             raise
         if response.command != command:
+            # A response to a different command means this connection's responses are mismatched; discard it
+            await self.close()
             raise DTCPError(
                 f'The source responded with a different command to the Move request (command: 0x{command:02x}).'
             )

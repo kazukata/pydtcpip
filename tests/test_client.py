@@ -398,6 +398,33 @@ async def test_finalize_rejected_after_response_is_lost_may_be_committed(
 
 
 @pytest.mark.anyio
+async def test_move_retries_finalize_on_a_new_connection_after_mismatched_response(
+    authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice, tmp_path: Path
+) -> None:
+    """Discard a connection whose response names a different command and retry finalization on a new one."""
+
+    path = tmp_path / 'recording.ts'
+    resume_states: list[MoveResumeState | None] = []
+    async with (
+        FakeSourceAKE(authority, source_device) as source,
+        FakeMediaServer(source, _CONTENT) as server,
+        DTCPClient(sink_device.credentials(), timeout=5) as client,
+    ):
+        source.wrong_command_finalize_responses = 1
+        size = await client.move(server.url, FileSink(path), on_resume_state=resume_states.append)
+
+    assert size == len(_CONTENT)
+    assert path.read_bytes() == _CONTENT
+    assert 'cancel' not in source.log
+    assert len(source.finalize_nonces) == 2
+    assert source.finalize_nonces[0] == source.finalize_nonces[1]
+    assert source.log[-2:] == ['finalize', 'complete']
+    # The mismatched response discards the first connection, so the retry authenticates on a second one
+    assert source.connection_count == 2
+    assert resume_states[-1] is None
+
+
+@pytest.mark.anyio
 async def test_rejected_move_initiation_explains_the_refusal(
     authority: FakeAuthority, sink_device: FakeDevice, source_device: FakeDevice, tmp_path: Path
 ) -> None:
