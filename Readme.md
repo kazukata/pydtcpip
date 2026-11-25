@@ -90,6 +90,7 @@ Models are grouped by device family, with older models first within each group. 
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
 | [Panasonic DMR-BRW1060 / BCW1060](https://github.com/tsukumijima/pydtcpip/issues/20) | Reported | Protected folders refused ([see note](#model-specific-notes)) | Unverified | Unverified | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
+| Panasonic DIGA DMR-2W202 | Reported | Reported ([see note](#model-specific-notes)) | Reported | Reported | Unverified |
 | [Panasonic DIGA DMR-4SE102](https://github.com/tsukumijima/pydtcpip/issues/26) | Reported | Reported | Unverified (4K advertises DTCP2) | Unverified | Unverified |
 | [Panasonic DIGA DMR-4TS204](https://github.com/tsukumijima/pydtcpip/issues/27) | Reported | Reported | Reported | Reported (including final Move) | Unverified |
 | [Panasonic DIGA DMR-4TS204S](https://github.com/tsukumijima/pydtcpip/issues/15) | Reported | Reported | Reported | Reported | Unverified |
@@ -125,6 +126,8 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
 - **Panasonic DMR-BRW1060 / BCW1060**
   - Folder structure, photos, music and tuner channels can be listed. Protected recording folders such as `AV_ALL` returned UPnP error 720 even with home streaming (お部屋ジャンプリンク) enabled and the PC allowed on the recorder.
   - `dump` records the refusal and continues with other folders. DTCP-IP authentication in pydtcpip takes place during a transfer, after selecting a recording.
+- **Panasonic DIGA DMR-2W202**
+  - Live tuner channels and separately stored mobile versions appear beside recordings. A mobile version advertises only a 640x360 resource and is not selected by default; pass `--resource 1` to transfer it explicitly.
 - **Panasonic DIGA DMR-4TS204S**
   - If `info` lists only converted resources for a recording, choose a resource number from that list.  
     Pass it to `stream` or `move` as `--resource N` for the same recording.
