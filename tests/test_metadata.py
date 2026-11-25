@@ -479,6 +479,29 @@ async def test_pctv_dump_uses_fresh_connections_even_when_the_server_ignores_con
 
 
 @pytest.mark.anyio
+async def test_dump_skips_live_channels_listed_beside_recordings(tmp_path: Path) -> None:
+    """Live channels in a recorder's listing do not take the places of recordings in the dump."""
+
+    channel = (
+        '<item id="TB0_1" parentID="0" restricted="1"><dc:title>Example channel</dc:title>'
+        '<upnp:class>object.item.videoItem.videoBroadcast</upnp:class>'
+        '<res protocolInfo="http-get:*:application/x-dtcp1:DLNA.ORG_CI=1">http://192.0.2.1/live</res></item>'
+    )
+    didl = recording_xml().replace('<item id="V_42"', channel + '<item id="V_42"', 1)
+    source = MetadataSource('Example', 'Example recorder', didl)
+    source.metadata_by_id['V_42'] = recording_xml()
+    async with source.serve() as (location, _):
+        result = await asyncio.to_thread(
+            CliRunner().invoke, app, ['dump', str(tmp_path), '--server', location, '--max-recordings', '1']
+        )
+    assert result.exit_code == 0, result.output
+    dumped = (tmp_path / 'recording-01.xml').read_text(encoding='utf-8')
+    assert 'V_42' in dumped
+    assert 'TB0_1' not in dumped
+    assert not (tmp_path / 'recording-02.xml').exists()
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize('count', ['10', '1', 'CF', '-1', None])
 async def test_cli_panasonic_fetches_parent_only_for_missing_copy_count(count: str | None) -> None:
     """Known counts avoid a full folder scan, while omitted counts retain the listing fallback."""

@@ -518,6 +518,9 @@ async def dump_media_server(
         for position, item in enumerate(result.objects):
             if isinstance(item, Container):
                 pending_containers.append(item.id)
+            # Live channels carry no recording media, so they would only crowd recordings out of the dump
+            elif item.upnp_class.startswith('object.item.videoItem.videoBroadcast'):
+                continue
             elif len(recordings) < max_recordings:
                 recordings.append((item, container_id, position))
 
