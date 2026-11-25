@@ -90,7 +90,7 @@ Models are grouped by device family, with older models first within each group. 
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
 | [Panasonic DMR-BRW1060 / BCW1060](https://github.com/tsukumijima/pydtcpip/issues/20) | Reported | Protected folders refused ([see note](#model-specific-notes)) | Unverified | Unverified | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
-| Panasonic DIGA DMR-2W202 | Reported | Reported ([see note](#model-specific-notes)) | Reported | Reported | Unverified |
+| [Panasonic DIGA DMR-2W202](https://github.com/tsukumijima/pydtcpip/pull/37) | Reported | Reported ([see note](#model-specific-notes)) | Reported | Reported | Unverified |
 | [Panasonic DIGA DMR-4SE102](https://github.com/tsukumijima/pydtcpip/issues/26) | Reported | Reported | Unverified (4K advertises DTCP2) | Unverified | Unverified |
 | [Panasonic DIGA DMR-4TS204](https://github.com/tsukumijima/pydtcpip/issues/27) | Reported | Reported | Reported | Reported (including final Move) | Unverified |
 | [Panasonic DIGA DMR-4TS204S](https://github.com/tsukumijima/pydtcpip/issues/15) | Reported | Reported | Reported | Reported | Unverified |
