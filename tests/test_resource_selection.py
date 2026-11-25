@@ -96,6 +96,35 @@ def test_mobile_only_recordings_require_an_explicit_resource(profile_name: str) 
     assert len(recording.resources) == 1
 
 
+def test_panasonic_mobile_only_recordings_require_an_explicit_resource() -> None:
+    recording = recording_with_resources(
+        'panasonic',
+        '<res pxn:CopyCount="10" protocolInfo="http-get:*:application/x-dtcp1:DTV_MVP_PN=DTCP_AVC_TS_DTV_SD_AAC_T;'
+        'DLNA.ORG_OP=10;DLNA.ORG_FLAGS=01519000000000000000000000000000">http://192.0.2.1/AV-9_BDY</res>',
+    )
+    assert recording.resources[0].is_original_quality is False
+    assert recording.original_resource is None
+    assert recording.original_move_resource is None
+
+
+def test_panasonic_mpeg_broadcast_stream_is_the_main_recording() -> None:
+    recording = recording_with_resources(
+        'panasonic',
+        '<res pxn:CopyCount="10" protocolInfo="http-get:*:application/x-dtcp1:DLNA.ORG_PN=DTCP_MPEG_TS_JP_T;'
+        'DLNA.ORG_OP=10;DLNA.ORG_FLAGS=01519000000000000000000000000000">http://192.0.2.1/AV-0_BDY</res>'
+        '<res resolution="1280x720" protocolInfo="http-get:*:application/x-dtcp1:DLNA.ORG_PN=DTCP_AVC_TS_MP_HD_AAC_LTP_T;'
+        'DLNA.ORG_CI=1">http://192.0.2.1/AV-0_BDY?CI=1&amp;fmt=AVC_TS_MP_HD_AAC_LTP_T</res>'
+        '<res resolution="640x360" protocolInfo="http-get:*:application/x-dtcp1:DTV_MVP_PN=DTCP_AVC_TS_DTV_SD_AAC_T">'
+        'http://192.0.2.1/AV-0_VGA</res>'
+        '<pxn:EncContentURI recMode="5x" protocolInfo="http-get:*:application/x-dtcp1:DLNA.ORG_PN=DTCP_AVC_TS_JP_AAC_T;'
+        'DLNA.ORG_CI=1">http://192.0.2.1/AV-0_BDY?CI=1&amp;fmt=AVC_TS_JP_AAC_T</pxn:EncContentURI>',
+    )
+    assert [resource.is_original_quality for resource in recording.resources] == [True, False, False, False]
+    assert recording.original_resource is not None
+    assert recording.original_resource.url == 'http://192.0.2.1/AV-0_BDY'
+    assert recording.original_move_resource == recording.original_resource
+
+
 def test_move_copy_count_comes_from_the_selected_resource() -> None:
     recording = recording_with_resources(
         'panasonic',
