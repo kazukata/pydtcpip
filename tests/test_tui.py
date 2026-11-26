@@ -463,8 +463,12 @@ async def test_save_original_stream_after_move_refusal(
                 else:
                     assert not list(tmp_path.glob('*.m2ts'))
                     assert not list(tmp_path.glob('.*.part'))
-                    await _wait(pilot.pause, lambda: isinstance(app.screen, ChoiceScreen))
+                    await _wait(
+                        pilot.pause,
+                        lambda: isinstance(app.screen, ChoiceScreen) and bool(app.screen.query('#choice-skip')),
+                    )
                     assert not app.screen.query('#choice-stream')
+                    await pilot.press('escape')
 
         assert media.count('GET') == 1
         assert all('BLKMove.dtcp.com' not in headers for _, headers in media.requests)
