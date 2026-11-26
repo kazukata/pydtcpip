@@ -77,18 +77,23 @@ Models are grouped by device family, with older models first within each group. 
 | Model / report | Discovery | Recording listings | Streaming (non-Move) | Move | Push dubbing reception |
 | --- | --- | --- | --- | --- | --- |
 | [Sony nasne CECH-ZNR1J](https://github.com/tsukumijima/pydtcpip/issues/21) | Reported | Reported | Reported | [Reported](https://github.com/tsukumijima/pydtcpip/pull/25) | Not supported |
+| [Sony nasne CECH-ZNR2J](https://github.com/tsukumijima/pydtcpip/issues/34) | Unverified | Reported | Reported | Unverified | Unverified |
 | [Sony nasne (model unspecified)](https://github.com/tsukumijima/pydtcpip/issues/16) | Reported (API) | Reported (API) | Reported (DR and 3x, API) | [Reported](https://github.com/tsukumijima/pydtcpip/issues/16#issuecomment-6994279457) | Unverified |
 | [Buffalo nasne NS-N100](https://github.com/tsukumijima/pydtcpip/issues/4) | Reported ([see note](#model-specific-notes)) | Reported | Unverified | Unverified | Not supported |
 | [Toshiba REGZA 42ZG1](https://github.com/tsukumijima/pydtcpip/issues/22) | Not detected | Unverified | Unverified | Unverified | Reported |
+| [Toshiba REGZA 50Z740XS](https://github.com/tsukumijima/pydtcpip/issues/34) | Unverified | Reported | Reported (including time-shift recordings) | Unverified | Unverified |
 | Toshiba REGZA 43Z570L | Verified | Verified | Verified | Refused to start | Verified |
 | [Toshiba REGZA 43M550M](https://github.com/tsukumijima/pydtcpip/issues/8) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Toshiba RD-BR600](https://github.com/tsukumijima/pydtcpip/issues/31) | Unverified (direct URL used) | Reported | Reported (full recording, API) | Unverified | Unverified |
 | Toshiba DBR-Z620 | Verified | Verified | Verified | Verified | Verified |
 | [Toshiba REGZA DBR-4KZ200](https://github.com/tsukumijima/pydtcpip/issues/19) | Reported | Reported (including time-shift recordings) | Unverified | Unverified | Unverified |
+| [Toshiba REGZA DBR-M4010](https://github.com/tsukumijima/pydtcpip/issues/34) | Unverified | Reported | Reported (including time-shift recordings) | Unverified | Unverified |
+| [Panasonic TZ-WR500P](https://github.com/tsukumijima/pydtcpip/issues/33) | Reported | Reported | Full recording saved | Media request refused (HTTP 503) | Unverified |
 | [Panasonic VIERA TH-65LX950](https://github.com/tsukumijima/pydtcpip/issues/14#issuecomment-7005316755) | Reported | Reported | Reported | Refused to start | Reported |
+| [Panasonic VIERA TV-43W90B](https://github.com/tsukumijima/pydtcpip/issues/32) | Reported | Reported | Full recording saved in standby | Refused to start | Unverified |
 | [Panasonic DMR-BXT3000](https://github.com/tsukumijima/pydtcpip/issues/7) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
-| [Panasonic DMR-BRW1060 / BCW1060](https://github.com/tsukumijima/pydtcpip/issues/20) | Reported | Reported ([see note](#model-specific-notes)) | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/20#issuecomment-7157451142) | [Reported](https://github.com/tsukumijima/pydtcpip/issues/20#issuecomment-7157451142) | Unverified |
+| [Panasonic DMR-BRW1060](https://github.com/tsukumijima/pydtcpip/issues/20) | Reported | Reported ([see note](#model-specific-notes)) | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/20#issuecomment-7157451142) | [Reported](https://github.com/tsukumijima/pydtcpip/issues/20#issuecomment-7157451142) | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
 | [Panasonic DIGA DMR-4SE102](https://github.com/tsukumijima/pydtcpip/issues/26) | Reported | Reported | Unverified (4K advertises DTCP2) | Unverified | Unverified |
 | [Panasonic DIGA DMR-4TS204](https://github.com/tsukumijima/pydtcpip/issues/27) | Reported | Reported | Reported | Reported (including final Move) | Unverified |
@@ -122,10 +127,15 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
   - For the 43Z570L, run `receive` on the PC and start dubbing from the TV.  
     In testing, the TV refused to start a Move initiated from the PC.
   - Other REGZA TV models may also support only dubbing initiated from the TV.
-- **Panasonic DMR-BRW1060 / BCW1060**
-  - Recording folders such as `AV_ALL` once returned UPnP error 720 even with home streaming (お部屋ジャンプリンク) enabled and the PC allowed on the recorder, while folder structure, photos, music and tuner channels could still be listed.  
-    A later retest listed them without credentials; the condition that caused the refusal was not identified.
-  - If the refusal occurs, `dump` records it and continues with other folders. Configuring credentials does not unlock listings: DTCP-IP authentication in pydtcpip takes place during a transfer, after selecting a recording.
+  - On the 50Z740XS, the [manual (p. 147)](https://cs.regza.com/document/manual/100016_07r0.pdf#page=147) directs users to save a time-shift recording to a normal recording drive before dubbing.
+- **Panasonic VIERA TV-43W90B**
+  - If media requests return HTTP 503 while the TV is on, try streaming in standby.  
+    The TV's recording list remained available in both states, and 4K recordings were absent from the network listing.
+- **Panasonic DMR-BRW1060**
+  - Protected folders can return UPnP error 720 even with home streaming enabled and the PC allowed on the recorder.  
+    If this occurs, `dump` records the response and continues with other folders. The recording list can be accessed without DTCP-IP credentials when the recorder allows it.
+- **Panasonic DIGA DMR-4TS204**
+  - 4K originals use DTCP2. The advertised 2K conversions returned HTTP 503 in the [streaming tests](https://github.com/tsukumijima/pydtcpip/issues/27#issuecomment-7071794483).
 - **Panasonic DIGA DMR-4TS204S**
   - If `info` lists only converted resources for a recording, choose a resource number from that list.  
     Pass it to `stream` or `move` as `--resource N` for the same recording.
