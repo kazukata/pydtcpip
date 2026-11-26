@@ -7,7 +7,7 @@ import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from types import TracebackType
-from typing import Protocol, Self
+from typing import Self
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -58,94 +58,73 @@ _TS_PACKET_SIZES = (188, 192)
 _TS_SYNC_CHECKS = 4
 
 
-class ExchangeKeyCache(Protocol):
-    """Storage for streaming exchange keys, keyed by the source's authentication endpoint."""
+# Sinks must expire exchange keys within 2 hours of continuous non-use for decryption (DTCP-IP V1SE 4.5)
+_EXCHANGE_KEY_IDLE_LIFETIME = 2 * 60 * 60.0
 
-    def get(self, host: str, port: int) -> ExchangeKey | None:
+
+class _ExchangeKeyStore:
+    """Streaming exchange keys held in client memory, keyed by authentication endpoint and expired after idle use."""
+
+    def __init__(self, idle_lifetime: float) -> None:
         """
-        Return the saved exchange key for an authentication endpoint.
+        Configure the idle lifetime.
 
         Args:
-            host (str): Source authentication address
-            port (int): Source authentication port
-
-        Returns:
-            ExchangeKey | None: Saved exchange key, or None if there is none
-        """
-        ...
-
-    def set(self, host: str, port: int, key: ExchangeKey) -> None:
-        """
-        Save the exchange key received from an authentication endpoint.
-
-        Args:
-            host (str): Source authentication address
-            port (int): Source authentication port
-            key (ExchangeKey): Exchange key to save
-        """
-        ...
-
-    def discard(self, host: str, port: int) -> None:
-        """
-        Remove the saved exchange key for an authentication endpoint.
-
-        Args:
-            host (str): Source authentication address
-            port (int): Source authentication port
-        """
-        ...
-
-
-class InMemoryExchangeKeyCache:
-    """An ExchangeKeyCache that keeps keys in process memory, optionally for a limited time."""
-
-    def __init__(self, *, max_age: float | None = None) -> None:
-        """
-        Configure the key lifetime.
-
-        Args:
-            max_age (float | None): Seconds after authentication to keep a key (None keeps it until discarded)
+            idle_lifetime (float): Seconds without decryption after which a key is expired
         """
 
-        self._max_age = max_age
+        self._idle_lifetime = idle_lifetime
+        # Endpoint -> (key, monotonic time of the last decryption or of authentication)
         self._keys: dict[tuple[str, int], tuple[ExchangeKey, float]] = {}
+        self._timer: asyncio.TimerHandle | None = None
 
     def get(self, host: str, port: int) -> ExchangeKey | None:
         """
-        Return the saved exchange key unless it has expired.
+        Return the key for an endpoint unless it has expired.
 
         Args:
             host (str): Source authentication address
             port (int): Source authentication port
 
         Returns:
-            ExchangeKey | None: Saved exchange key, or None if there is none
+            ExchangeKey | None: Held exchange key, or None if there is none
         """
 
+        self._expire_idle()
         entry = self._keys.get((host.lower(), port))
-        if entry is None:
-            return None
-        key, saved_at = entry
-        if self._max_age is not None and time.monotonic() - saved_at > self._max_age:
-            del self._keys[(host.lower(), port)]
-            return None
-        return key
+        return entry[0] if entry is not None else None
 
     def set(self, host: str, port: int, key: ExchangeKey) -> None:
         """
-        Save an exchange key.
+        Hold a key received from an endpoint, starting its idle period now.
 
         Args:
             host (str): Source authentication address
             port (int): Source authentication port
-            key (ExchangeKey): Exchange key to save
+            key (ExchangeKey): Exchange key to hold
         """
 
         self._keys[(host.lower(), port)] = (key, time.monotonic())
+        self._schedule()
+
+    def touch(self, host: str, port: int, key: ExchangeKey) -> None:
+        """
+        Record that a held key was used for decryption, restarting its idle period.
+
+        Args:
+            host (str): Source authentication address
+            port (int): Source authentication port
+            key (ExchangeKey): Exchange key used for decryption
+        """
+
+        endpoint = (host.lower(), port)
+        entry = self._keys.get(endpoint)
+        if entry is not None and entry[0] == key:
+            self._keys[endpoint] = (key, time.monotonic())
 
     def discard(self, host: str, port: int) -> None:
         """
-        Remove a saved exchange key.
+        Expire the key for an endpoint.
 
         Args:
             host (str): Source authentication address
@@ -153,6 +132,51 @@ class InMemoryExchangeKeyCache:
         """
 
         self._keys.pop((host.lower(), port), None)
+
+    def discard_host(self, host: str) -> None:
+        """
+        Expire the keys for every endpoint on a host.
+
+        Args:
+            host (str): Source address
+        """
+
+        for endpoint in [endpoint for endpoint in self._keys if endpoint[0] == host.lower()]:
+            del self._keys[endpoint]
+
+    def clear(self) -> None:
+        """Expire all keys and stop the expiry timer."""
+
+        self._keys.clear()
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+
+    def _expire_idle(self) -> None:
+        """Expire keys whose idle period has reached the lifetime."""
+
+        now = time.monotonic()
+        for endpoint, (_, last_used) in list(self._keys.items()):
+            if now - last_used >= self._idle_lifetime:
+                del self._keys[endpoint]
+
+    def _schedule(self) -> None:
+        """Arrange for the next idle key to be expired even if the client is not used again."""
+
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+        if len(self._keys) == 0:
+            return
+        next_expiry = min(last_used for _, last_used in self._keys.values()) + self._idle_lifetime
+        self._timer = asyncio.get_running_loop().call_later(max(0.0, next_expiry - time.monotonic()), self._on_timer)
+
+    def _on_timer(self) -> None:
+        """Expire idle keys and wait for the next one."""
+
+        self._timer = None
+        self._expire_idle()
+        self._schedule()
 
 
 def _looks_like_transport_stream(data: bytes) -> bool:
@@ -190,7 +214,7 @@ class DTCPClient:
         on_srm_update: SRMUpdateCallback | None = None,
         timeout: float = 30.0,
         http_session: aiohttp.ClientSession | None = None,
-        exchange_key_cache: ExchangeKeyCache | None = None,
+        reuse_exchange_keys: bool = False,
     ) -> None:
         """
         Configure sink credentials and SRM.
@@ -201,8 +225,8 @@ class DTCPClient:
             on_srm_update (SRMUpdateCallback | None): Callback for persisting a newly received SRM
             timeout (float): Authentication and HTTP response timeout in seconds
             http_session (aiohttp.ClientSession | None): Shared HTTP session (created by this client if None)
-            exchange_key_cache (ExchangeKeyCache | None): Storage for reusing streaming exchange keys between
-                transfers to the same source (None authenticates for every stream)
+            reuse_exchange_keys (bool): Hold streaming exchange keys in this client and reuse them for later streams
+                from the same source, expiring them after 2 hours without decryption (False authenticates every stream)
         """
 
         self.credentials = credentials
@@ -211,7 +235,7 @@ class DTCPClient:
         self._timeout = timeout
         self._http_session = http_session
         self._owns_http_session = http_session is None
-        self._exchange_key_cache = exchange_key_cache
+        self._exchange_keys = _ExchangeKeyStore(_EXCHANGE_KEY_IDLE_LIFETIME) if reuse_exchange_keys is True else None
 
         # Reject a locally revoked certificate before connecting to the source
         self.srm.check_device(credentials.certificate)
@@ -228,8 +252,9 @@ class DTCPClient:
         await self.close()
 
     async def close(self) -> None:
-        """Close the HTTP session created by this client."""
+        """Expire held exchange keys and close the HTTP session created by this client."""
 
+        self.expire_exchange_keys()
         if self._owns_http_session is True and self._http_session is not None:
             await self._http_session.close()
             self._http_session = None
@@ -252,27 +277,34 @@ class DTCPClient:
         async with self._open('HEAD', url, headers, resource=resource) as (_, media_info):
             return media_info
 
+    def expire_exchange_keys(self) -> None:
+        """
+        Expire all streaming exchange keys held by this client.
+        Call this when the application detects that the host has lost connection on all network interfaces.
+        """
+
+        if self._exchange_keys is not None:
+            self._exchange_keys.clear()
+
     async def authenticate(
         self,
         target: Resource | str,
         *,
         on_event: EventCallback | None = None,
-    ) -> ExchangeKey:
+    ) -> None:
         """
-        Authenticate for streaming in advance and save the exchange key in the exchange key cache.
+        Authenticate for streaming in advance and hold the exchange key for the next stream from the source.
+        Without reuse_exchange_keys the key is discarded and this only checks that authentication succeeds.
 
         Args:
             target (Resource | str): Resource or its URL, used to find the authentication endpoint
             on_event (EventCallback | None): Event callback
-
-        Returns:
-            ExchangeKey: Exchange key received from the source
         """
 
         transfer_id = uuid.uuid4().hex
         media_info = await self.probe(target)
         await dispatch_event(on_event, MediaInfoReceived(transfer_id=transfer_id, media_info=media_info))
-        return await self._authenticate_stream(media_info, transfer_id=transfer_id, on_event=on_event)
+        await self._authenticate_stream(media_info, transfer_id=transfer_id, on_event=on_event)
 
     async def stream(
         self,
@@ -358,7 +390,7 @@ class DTCPClient:
             media_info (MediaInfo): Transfer information from the HEAD response
             exchange_key (ExchangeKey): Exchange key for the source
             on_data (DataCallback): Async callback for decrypted data
-            is_cached_key (bool): Whether exchange_key came from the exchange key cache
+            is_cached_key (bool): Whether exchange_key is a held key from an earlier authentication
             transfer_id (str): Transfer identifier for events
             total_content_bytes (int | None): Expected content size for progress events
             on_event (EventCallback | None): Event callback
@@ -397,6 +429,8 @@ class DTCPClient:
                     raise DTCPError('The exchange key label still does not match after reauthentication.')
 
             cleartext = decrypt_packet(packet, exchange_key.value)
+            if self._exchange_keys is not None:
+                self._exchange_keys.touch(media_info.host, media_info.port, exchange_key)
 
             # A source may replace its exchange key without changing the label, so check content from a saved key
             if is_first_packet is True and is_cached_key is True and _looks_like_transport_stream(cleartext) is False:
@@ -407,6 +441,7 @@ class DTCPClient:
                 if fresh_key.value != exchange_key.value:
                     cleartext = decrypt_packet(packet, fresh_key.value)
                 exchange_key = fresh_key
+                is_cached_key = False
             is_first_packet = False
 
             http_bytes += len(packet.wire_bytes)
@@ -643,12 +678,12 @@ class DTCPClient:
             media_info (MediaInfo): Transfer information including the authentication endpoint
 
         Returns:
-            ExchangeKey | None: Saved exchange key, or None without a cache or saved key
+            ExchangeKey | None: Held exchange key, or None when not reusing keys or none is held
         """
 
-        if self._exchange_key_cache is None:
+        if self._exchange_keys is None:
             return None
-        return self._exchange_key_cache.get(media_info.host, media_info.port)
+        return self._exchange_keys.get(media_info.host, media_info.port)
 
     async def _authenticate_stream(
         self,
@@ -658,7 +693,7 @@ class DTCPClient:
         on_event: EventCallback | None,
     ) -> ExchangeKey:
         """
-        Authenticate for streaming and save the exchange key in the exchange key cache.
+        Authenticate for streaming and hold the exchange key when reusing keys.
 
         Args:
             media_info (MediaInfo): Transfer information including the authentication endpoint
@@ -669,11 +704,11 @@ class DTCPClient:
             ExchangeKey: Exchange key received from the source
         """
 
-        if self._exchange_key_cache is not None:
-            self._exchange_key_cache.discard(media_info.host, media_info.port)
+        if self._exchange_keys is not None:
+            self._exchange_keys.discard(media_info.host, media_info.port)
         result = await self._authenticate(media_info, is_move=False, transfer_id=transfer_id, on_event=on_event)
-        if self._exchange_key_cache is not None:
-            self._exchange_key_cache.set(media_info.host, media_info.port, result.exchange_key)
+        if self._exchange_keys is not None:
+            self._exchange_keys.set(media_info.host, media_info.port, result.exchange_key)
         return result.exchange_key
 
     async def _authenticate(
@@ -881,6 +916,11 @@ class DTCPClient:
                 )
                 yield response, media_info
         except aiohttp.ClientError as ex:
+            # Losing the connection may mean the network changed, so do not trust held keys for that host
+            if isinstance(ex, aiohttp.ClientConnectionError) and self._exchange_keys is not None:
+                hostname = urlsplit(url).hostname
+                if hostname is not None:
+                    self._exchange_keys.discard_host(hostname)
             raise DLNAError(f'Media {method} request failed ({ex}).') from ex
 
     async def _read_packets(self, response: aiohttp.ClientResponse) -> AsyncIterator[ProtectedPacket]:
