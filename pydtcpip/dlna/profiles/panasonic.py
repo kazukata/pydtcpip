@@ -93,7 +93,7 @@ def _needs_listing_metadata(recording: Recording) -> bool:
 
 def _interpret_http_status(status: int, url: str, upnp_error_code: int | None) -> PyDTCPIPError | None:
     """
-    Interpret a recorder that withholds protected recordings from unauthorized clients.
+    Explain a recorder's refusal to list protected recordings.
 
     Args:
         status (int): HTTP status code
@@ -104,13 +104,11 @@ def _interpret_http_status(status: int, url: str, upnp_error_code: int | None) -
         PyDTCPIPError | None: Client authorization error when the recorder refuses the listing, otherwise None
     """
 
-    # Some recorders list structure, photos, music and tuner channels but return 720 for protected
-    # recording folders until the PC is authorized, while BrowseMetadata on the same folder still succeeds
+    # Some recorders return 720 for protected recording folders while other folders remain available
     if upnp_error_code == _CANNOT_PROCESS_REQUEST:
         return ClientNotAllowedError(
             'The recorder refused to list its protected recordings. '
-            'Enable home streaming and allow this PC in the recorder home-network settings; '
-            'some recorders list protected recordings only to a client authenticated with DTCP-IP credentials.',
+            'Check that home streaming is enabled and this PC is allowed in the recorder home-network settings.',
             http_status=status,
             upnp_error_code=upnp_error_code,
         )
