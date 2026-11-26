@@ -1,9 +1,10 @@
 """Receive recordings from devices on a home network using DLNA and DTCP-IP."""
 
-from pydtcpip.client import DTCPClient
+from pydtcpip.client import DTCPClient, ExchangeKeyCache, InMemoryExchangeKeyCache
 from pydtcpip.dlna.client import BrowseResult, DLNAClient, MediaServer
 from pydtcpip.dlna.extensions import MetadataExtension, NasneExtension, SonyExtension
 from pydtcpip.dlna.scpd import ServiceArgument, ServiceDescription
+from pydtcpip.dtcp.ake import ExchangeKey
 from pydtcpip.dtcp.crypto import DeviceCredentials
 from pydtcpip.dtcp.srm import SRM
 from pydtcpip.errors import (
@@ -54,7 +55,10 @@ __all__ = [
     'DeviceCredentials',
     'DeviceStore',
     'DubbingReceiver',
+    'ExchangeKey',
+    'ExchangeKeyCache',
     'FileSink',
+    'InMemoryExchangeKeyCache',
     'MediaInfo',
     'MediaServer',
     'MetadataExtension',
