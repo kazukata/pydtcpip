@@ -88,7 +88,7 @@ Models are grouped by device family, with older models first within each group. 
 | [Panasonic VIERA TH-65LX950](https://github.com/tsukumijima/pydtcpip/issues/14#issuecomment-7005316755) | Reported | Reported | Reported | Refused to start | Reported |
 | [Panasonic DMR-BXT3000](https://github.com/tsukumijima/pydtcpip/issues/7) | Reported | Reported | Unverified | Unverified | Unverified |
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
-| [Panasonic DMR-BRW1060 / BCW1060](https://github.com/tsukumijima/pydtcpip/issues/20) | Reported | Protected folders refused ([see note](#model-specific-notes)) | Unverified | Unverified | Unverified |
+| [Panasonic DMR-BRW1060 / BCW1060](https://github.com/tsukumijima/pydtcpip/issues/20) | Reported | Reported ([see note](#model-specific-notes)) | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/20#issuecomment-7157451142) | [Reported](https://github.com/tsukumijima/pydtcpip/issues/20#issuecomment-7157451142) | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
 | [Panasonic DIGA DMR-4SE102](https://github.com/tsukumijima/pydtcpip/issues/26) | Reported | Reported | Unverified (4K advertises DTCP2) | Unverified | Unverified |
 | [Panasonic DIGA DMR-4TS204](https://github.com/tsukumijima/pydtcpip/issues/27) | Reported | Reported | Reported | Reported (including final Move) | Unverified |
@@ -123,8 +123,9 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
     In testing, the TV refused to start a Move initiated from the PC.
   - Other REGZA TV models may also support only dubbing initiated from the TV.
 - **Panasonic DMR-BRW1060 / BCW1060**
-  - Folder structure, photos, music and tuner channels can be listed. Protected recording folders such as `AV_ALL` returned UPnP error 720 even with home streaming (お部屋ジャンプリンク) enabled and the PC allowed on the recorder.
-  - `dump` records the refusal and continues with other folders. DTCP-IP authentication in pydtcpip takes place during a transfer, after selecting a recording.
+  - Recording folders such as `AV_ALL` once returned UPnP error 720 even with home streaming (お部屋ジャンプリンク) enabled and the PC allowed on the recorder, while folder structure, photos, music and tuner channels could still be listed.  
+    A later retest listed them without credentials; the condition that caused the refusal was not identified.
+  - If the refusal occurs, `dump` records it and continues with other folders. Configuring credentials does not unlock listings: DTCP-IP authentication in pydtcpip takes place during a transfer, after selecting a recording.
 - **Panasonic DIGA DMR-4TS204S**
   - If `info` lists only converted resources for a recording, choose a resource number from that list.  
     Pass it to `stream` or `move` as `--resource N` for the same recording.
