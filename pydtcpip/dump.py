@@ -502,24 +502,37 @@ async def dump_media_server(
     # Browse from the root and dump listings from folders containing recordings
     ## Record each recording's folder and position so it can be fetched individually from the listing
     recordings: list[tuple[Recording, str, int]] = []
-    pending_containers = ['0']
+    # Folders to list, with the starting index of the next page to fetch
+    pending_containers: list[tuple[str, int]] = [('0', 0)]
     browse_index = 0
     while len(pending_containers) > 0 and len(recordings) < max_recordings and browse_index < 20:
-        container_id = pending_containers.pop(0)
+        container_id, start = pending_containers.pop(0)
         browse_index += 1
         # Some recorders refuse to list protected folders until the PC is authorized; record the
         # error and keep dumping the remaining folders instead of aborting the whole diagnostic
         try:
-            result = await server.browse(container_id, start=0, count=max_recordings)
+            result = await server.browse(container_id, start=start, count=max_recordings)
         except DLNAError as ex:
             write(f'browse-{browse_index:02d}.txt', f'Browse failed: {ex}\n', f'Folder {browse_index} listing failed')
             continue
         write_xml(f'browse-{browse_index:02d}.xml', result.raw_didl, 'didl', f'Folder {browse_index} listing')
-        for position, item in enumerate(result.objects):
+        has_recording = False
+        for offset, item in enumerate(result.objects):
             if isinstance(item, Container):
-                pending_containers.append(item.id)
-            elif len(recordings) < max_recordings:
-                recordings.append((item, container_id, position))
+                pending_containers.append((item.id, 0))
+            # Live channels carry no recording media, so they would only crowd recordings out of the dump
+            elif item.upnp_class.startswith('object.item.videoItem.videoBroadcast'):
+                continue
+            else:
+                has_recording = True
+                if len(recordings) < max_recordings:
+                    # Keep the position within the whole folder so the recording can be fetched individually
+                    recordings.append((item, container_id, start + offset))
+        # Recordings may follow a full page without any, such as one filled with live channels
+        ## Queue the next page after the folders already found, since tuner folders can list hundreds of
+        ## channels that would otherwise use up the request limit before the recording folders are reached
+        if has_recording is False and len(result.objects) > 0 and result.number_returned == max_recordings:
+            pending_containers.append((container_id, start + result.number_returned))
 
     # Recording metadata and HEAD responses for original-format resources
     is_listing_richer = server.profile.resolve_has_listing_only_metadata()

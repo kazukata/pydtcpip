@@ -95,6 +95,7 @@ Models are grouped by device family, with older models first within each group. 
 | [Panasonic DMR-BRX/BCX2060](https://github.com/tsukumijima/pydtcpip/issues/6) | Reported | Reported | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/11) | Unverified | Unverified |
 | [Panasonic DMR-BRW1060](https://github.com/tsukumijima/pydtcpip/issues/20) | Reported | Reported ([see note](#model-specific-notes)) | [Full recording saved](https://github.com/tsukumijima/pydtcpip/issues/20#issuecomment-7157451142) | [Reported](https://github.com/tsukumijima/pydtcpip/issues/20#issuecomment-7157451142) | Unverified |
 | [Panasonic DMR-2W101](https://github.com/tsukumijima/pydtcpip/issues/11) | External script only | Reported (API) | Full recording saved | Unverified | Unverified |
+| [Panasonic DIGA DMR-2W202](https://github.com/tsukumijima/pydtcpip/pull/37) | Reported | Reported ([see note](#model-specific-notes)) | Reported | Reported | Unverified |
 | [Panasonic DIGA DMR-4SE102](https://github.com/tsukumijima/pydtcpip/issues/26) | Reported | Reported | Unverified (4K advertises DTCP2) | Unverified | Unverified |
 | [Panasonic DIGA DMR-4TS204](https://github.com/tsukumijima/pydtcpip/issues/27) | Reported | Reported | Reported | Reported (including final Move) | Unverified |
 | [Panasonic DIGA DMR-4TS204S](https://github.com/tsukumijima/pydtcpip/issues/15) | Reported | Reported | Reported | Reported | Unverified |
@@ -134,6 +135,8 @@ If discovery fails on Windows, select your PC's LAN address with `--interface`.
 - **Panasonic DMR-BRW1060**
   - Protected folders can return UPnP error 720 even with home streaming enabled and the PC allowed on the recorder.  
     If this occurs, `dump` records the response and continues with other folders. The recording list can be accessed without DTCP-IP credentials when the recorder allows it.
+- **Panasonic DIGA DMR-2W202**
+  - Live tuner channels and separately stored mobile versions appear beside recordings. A mobile version advertises only a 640x360 resource and is not selected by default; pass `--resource 1` to transfer it explicitly.
 - **Panasonic DIGA DMR-4TS204**
   - 4K originals use DTCP2. The advertised 2K conversions returned HTTP 503 in the [streaming tests](https://github.com/tsukumijima/pydtcpip/issues/27#issuecomment-7071794483).
 - **Panasonic DIGA DMR-4TS204S**

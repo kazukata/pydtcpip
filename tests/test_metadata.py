@@ -230,6 +230,8 @@ class MetadataSource:
         self.metadata_didl: str | None = None
         self.metadata_by_id: dict[str, str] = {}
         self.response_bodies: dict[str, bytes] = {}
+        # Folder children served one page at a time, honoring the requested range of BrowseDirectChildren
+        self.paged_items: dict[str, list[str]] | None = None
 
     async def handle(self, request: web.Request) -> web.Response:
         self.requests.append(request.path)
@@ -282,10 +284,20 @@ class MetadataSource:
         name = action.tag.rpartition('}')[2]
         arguments = {child.tag: child.text or '' for child in action}
         self.calls.append((name, arguments))
+        number_returned = total_matches = 1
         if name in self.response_bodies:
             return web.Response(body=self.response_bodies[name], content_type='text/xml')
         if name == 'Browse':
             result = self.didl
+            if self.paged_items is not None and arguments['BrowseFlag'] == 'BrowseDirectChildren':
+                children = self.paged_items.get(arguments['ObjectID'], [])
+                start = int(arguments['StartingIndex'])
+                count = int(arguments['RequestedCount']) or len(children)
+                page = children[start : start + count]
+                number_returned, total_matches = len(page), len(children)
+                # Keep the namespace declarations of the synthetic listing around the served page
+                envelope = recording_xml()
+                result = envelope[: envelope.index('<item')] + ''.join(page) + '</DIDL-Lite>'
             if self.metadata_didl is not None and arguments['BrowseFlag'] == 'BrowseMetadata':
                 result = self.metadata_didl
             if arguments['BrowseFlag'] == 'BrowseMetadata' and arguments['ObjectID'] in self.metadata_by_id:
@@ -313,8 +325,8 @@ class MetadataSource:
         namespace = action.tag[1:].partition('}')[0]
         return web.Response(
             text=f'''<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>
-        <u:{name}Response xmlns:u="{namespace}"><Result>{escape(result)}</Result><NumberReturned>1</NumberReturned>
-        <TotalMatches>1</TotalMatches></u:{name}Response></s:Body></s:Envelope>''',
+        <u:{name}Response xmlns:u="{namespace}"><Result>{escape(result)}</Result><NumberReturned>{number_returned}</NumberReturned>
+        <TotalMatches>{total_matches}</TotalMatches></u:{name}Response></s:Body></s:Envelope>''',
             content_type='text/xml',
         )
 
@@ -476,6 +488,88 @@ async def test_pctv_dump_uses_fresh_connections_even_when_the_server_ignores_con
     assert result.exit_code == 0, result.output
     assert len(connections) >= 2
     assert (tmp_path / 'recording-01.xml').is_file()
+
+
+@pytest.mark.anyio
+async def test_dump_skips_live_channels_listed_beside_recordings(tmp_path: Path) -> None:
+    """Live channels in a recorder's listing do not take the places of recordings in the dump."""
+
+    channel = (
+        '<item id="TB0_1" parentID="0" restricted="1"><dc:title>Example channel</dc:title>'
+        '<upnp:class>object.item.videoItem.videoBroadcast</upnp:class>'
+        '<res protocolInfo="http-get:*:application/x-dtcp1:DLNA.ORG_CI=1">http://192.0.2.1/live</res></item>'
+    )
+    didl = recording_xml().replace('<item id="V_42"', channel + '<item id="V_42"', 1)
+    source = MetadataSource('Example', 'Example recorder', didl)
+    source.metadata_by_id['V_42'] = recording_xml()
+    async with source.serve() as (location, _):
+        result = await asyncio.to_thread(
+            CliRunner().invoke, app, ['dump', str(tmp_path), '--server', location, '--max-recordings', '1']
+        )
+    assert result.exit_code == 0, result.output
+    dumped = (tmp_path / 'recording-01.xml').read_text(encoding='utf-8')
+    assert 'V_42' in dumped
+    assert 'TB0_1' not in dumped
+    assert not (tmp_path / 'recording-02.xml').exists()
+
+
+@pytest.mark.anyio
+async def test_dump_continues_a_folder_after_a_page_of_live_channels(tmp_path: Path) -> None:
+    """A recording on the page after live channels is dumped and fetched from its position in the folder."""
+
+    channel = (
+        '<item id="TB0_1" parentID="0" restricted="1"><dc:title>Example channel</dc:title>'
+        '<upnp:class>object.item.videoItem.videoBroadcast</upnp:class>'
+        '<res protocolInfo="http-get:*:application/x-dtcp1:DLNA.ORG_CI=1">http://192.0.2.1/live</res></item>'
+    )
+    xml = recording_xml()
+    recording = xml[xml.index('<item') : xml.index('</DIDL-Lite>')]
+    source = MetadataSource('Panasonic', 'BD/DVD Recorder', xml)
+    source.paged_items = {'0': [channel, recording]}
+    async with source.serve() as (location, _):
+        result = await asyncio.to_thread(
+            CliRunner().invoke, app, ['dump', str(tmp_path), '--server', location, '--max-recordings', '1']
+        )
+    assert result.exit_code == 0, result.output
+    pages = [
+        (arguments['StartingIndex'], arguments['RequestedCount'])
+        for name, arguments in source.calls
+        if name == 'Browse' and arguments['BrowseFlag'] == 'BrowseDirectChildren'
+    ]
+    # The second page and the individual fetch of the recording both start at its position in the folder
+    assert pages == [('0', '1'), ('1', '1'), ('1', '1')]
+    dumped = (tmp_path / 'recording-01.xml').read_text(encoding='utf-8')
+    assert 'V_42' in dumped
+    assert 'TB0_1' not in dumped
+
+
+@pytest.mark.anyio
+async def test_dump_reaches_recording_folders_listed_after_large_tuner_folders(tmp_path: Path) -> None:
+    """Further pages of a channel-only folder wait until the first pages of the other folders are listed."""
+
+    def folder(object_id: str) -> str:
+        return (
+            f'<container id="{object_id}" parentID="0" restricted="1"><dc:title>Example folder</dc:title>'
+            '<upnp:class>object.container.storageFolder</upnp:class></container>'
+        )
+
+    channels = [
+        f'<item id="TB0_{index}" parentID="TB0" restricted="1"><dc:title>Example channel</dc:title>'
+        '<upnp:class>object.item.videoItem.videoBroadcast</upnp:class>'
+        f'<res protocolInfo="http-get:*:application/x-dtcp1:DLNA.ORG_CI=1">http://192.0.2.1/live{index}</res></item>'
+        for index in range(40)
+    ]
+    xml = recording_xml()
+    recording = xml[xml.index('<item') : xml.index('</DIDL-Lite>')]
+    source = MetadataSource('Example', 'Example recorder', xml)
+    source.paged_items = {'0': [folder('TB0'), folder('AV')], 'TB0': channels, 'AV': [recording]}
+    source.metadata_by_id['V_42'] = xml
+    async with source.serve() as (location, _):
+        result = await asyncio.to_thread(
+            CliRunner().invoke, app, ['dump', str(tmp_path), '--server', location, '--max-recordings', '1']
+        )
+    assert result.exit_code == 0, result.output
+    assert 'V_42' in (tmp_path / 'recording-01.xml').read_text(encoding='utf-8')
 
 
 @pytest.mark.anyio

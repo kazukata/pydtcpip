@@ -7,7 +7,7 @@ from pydtcpip.dlna.description import DeviceDescription
 from pydtcpip.dlna.profiles.base import ChapterField, CopyCountField, Profile
 from pydtcpip.dlna.profiles.generic import GENERIC
 from pydtcpip.errors import ClientNotAllowedError, PyDTCPIPError
-from pydtcpip.models import Recording, Resource, ResourceConversion
+from pydtcpip.models import Recording, Resource, ResourceConversion, ResourceVariant
 
 
 # UPnP error returned when the recorder refuses to list a protected container's children
@@ -55,6 +55,28 @@ def _read_resource_conversion(item: ET.Element, resource: ET.Element) -> Resourc
             reference = sibling.get(field_name)
             if reference is not None and reference.strip() and urljoin(url, reference.strip()) == url:
                 return ResourceConversion(is_converted=True)
+    return None
+
+
+def _read_resource_variant(resource: Resource) -> ResourceVariant | None:
+    """
+    Identify the broadcast-format main recording and separately stored mobile versions by media profile.
+    Conversion evidence is evaluated first, so a converted resource never becomes the main recording.
+
+    Args:
+        resource (Resource): Resource with its advertised media profiles
+
+    Returns:
+        ResourceVariant | None: Recording version, or None for an unclassified format
+    """
+
+    # Mobile versions advertise only the mobile video profile and may omit the conversion flag
+    if 'DTV_MVP_PN' in resource.protocol_info.parameters:
+        return ResourceVariant(kind='mobile')
+    # Recorders convert to AVC only, so an MPEG-2 broadcast stream is the stored recording
+    profile = resource.protocol_info.parameters.get('DLNA.ORG_PN', '').upper().removeprefix('DTCP_')
+    if profile == 'MPEG_TS_JP_T':
+        return ResourceVariant(kind='main')
     return None
 
 
@@ -135,6 +157,7 @@ PANASONIC = Profile(
     ),
     chapter_fields=(ChapterField('{urn:schemas-panasonic-com:pxn}ChapterList', 'panasonic', on_resource=True),),
     read_resource_conversion=_read_resource_conversion,
+    read_resource_variant=_read_resource_variant,
     resource_elements=(
         '{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}res',
         '{urn:schemas-panasonic-com:pxn}EncContentURI',
